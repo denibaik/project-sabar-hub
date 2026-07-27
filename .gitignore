@@ -1,0 +1,27 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Root artifacts
+nul
+/package-lock.json
+
+# Frontend
+raynor-hub-frontend/node_modules/
+raynor-hub-frontend/.next/
+raynor-hub-frontend/*.tsbuildinfo
+raynor-hub-frontend/.env.local
+raynor-hub-frontend/.env.development.local
+raynor-hub-frontend/.env.test.local
+raynor-hub-frontend/.env.production.local
+
+# Backend
+raynor-hub-backend/.pytest_cache/
+raynor-hub-backend/__pycache__/
+raynor-hub-backend/**/*.pyc
+raynor-hub-backend/*.egg-info/
+raynor-hub-backend/data/
+raynor-hub-backend/.env
+raynor-hub-backend/.env.local
