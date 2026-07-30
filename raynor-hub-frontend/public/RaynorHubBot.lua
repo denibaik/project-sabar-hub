@@ -63,6 +63,7 @@ local function apiCall(method, path, bodyTbl, headers)
         bodyStr = Http:JSONEncode(bodyTbl)
         -- Roblox encode tabel kosong sbg [] (array); backend butuh objek {}
         bodyStr = bodyStr:gsub('"inventory":%[%]', '"inventory":{}')
+        bodyStr = bodyStr:gsub('"names":%[%]', '"names":{}')
         if bodyStr == "[]" then bodyStr = "{}" end
     end
     local ok, res = pcall(function()
@@ -76,18 +77,31 @@ local function apiCall(method, path, bodyTbl, headers)
 end
 
 --============================ INVENTORY ============================
+-- mengembalikan: stock {cat={key=count}}, names {cat={key="Nama Tampilan"}}
+-- names dipakai UI dashboard; ItemKey (mis. UUID pet) tetap yang dipakai SendBatch.
 local function snapshotInventory()
-    local rep = PSC:GetLocalReplica(); local out = {}
-    if not (rep and rep.Data and rep.Data.Inventory) then return out end
+    local rep = PSC:GetLocalReplica(); local out, names = {}, {}
+    if not (rep and rep.Data and rep.Data.Inventory) then return out, names end
     for _, cat in ipairs(mc.Categories) do
         local t = rep.Data.Inventory[cat]
         if typeof(t) == "table" then
-            local m = {}; local n = 0
-            for k, v in pairs(t) do m[tostring(k)] = (typeof(v) == "table") and 1 or (tonumber(v) or 0); n = n + 1 end
+            local m, nm = {}, {}
+            local n, hasName = 0, false
+            for k, v in pairs(t) do
+                local key = tostring(k)
+                m[key] = (typeof(v) == "table") and 1 or (tonumber(v) or 0)
+                n = n + 1
+                -- nama tampilan hanya dikirim kalau beda dari key (mis. Pets pakai UUID)
+                local ok, disp = pcall(function() return mc.Resolve(cat, k, v) end)
+                if ok and type(disp) == "string" and disp ~= "" and disp ~= key then
+                    nm[key] = disp; hasName = true
+                end
+            end
             if n > 0 then out[cat] = m end
+            if hasName then names[cat] = nm end
         end
     end
-    return out
+    return out, names
 end
 local function ownedCount(cat, key)
     local rep = PSC:GetLocalReplica()
@@ -184,8 +198,9 @@ local function authH() return { ["Authorization"] = "Bearer " .. token } end
 -- heartbeat loop (dengan inventory utk routing)
 task.spawn(function()
     while stillMe() do
+        local inv, nm = snapshotInventory()
         local code = apiCall("POST", "/api/v1/bots/heartbeat",
-            { server = tostring(game.JobId), ping_ms = 0, inventory = snapshotInventory() }, authH())
+            { server = tostring(game.JobId), ping_ms = 0, inventory = inv, names = nm }, authH())
         if code == 401 then saveToken(""); token = registerBot(); if not token then break end end
         task.wait(CONFIG.HEARTBEAT)
     end
@@ -193,7 +208,8 @@ end)
 
 log(("Online. BASE=%s DRY_RUN=%s"):format(CONFIG.BASE_URL, tostring(CONFIG.DRY_RUN)))
 while stillMe() do
-    local code, order = apiCall("POST", "/api/v1/bots/claim", { inventory = snapshotInventory() }, authH())
+    local cInv, cNames = snapshotInventory()
+    local code, order = apiCall("POST", "/api/v1/bots/claim", { inventory = cInv, names = cNames }, authH())
     if code == 200 and order and order.id then
         log(("Order %s → %s (%d item)"):format(tostring(order.id):sub(1, 8), tostring(order.recipient), #(order.items or {})))
         local ok, res = pcall(processOrder, order)

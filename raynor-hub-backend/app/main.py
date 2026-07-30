@@ -94,7 +94,7 @@ def heartbeat(payload: BotHeartbeatRequest, token: str = Depends(authenticate_bo
     if not match: raise HTTPException(status_code=401, detail="Invalid bot token")
     bot, _ = match; bot.status = BotStatus.ONLINE; bot.last_heartbeat_at = datetime.now(timezone.utc); bot.server = payload.server; bot.ping_ms = payload.ping_ms
     if payload.inventory is not None:
-        SqlAlchemyBotInventoryRepository(db).upsert(bot.id, payload.inventory)
+        SqlAlchemyBotInventoryRepository(db).upsert(bot.id, payload.inventory, payload.names)
     return response(repo.save(bot))
 
 @app.get("/api/v1/bots", response_model=BotListResponse)
@@ -132,17 +132,23 @@ def list_items(db: Session = Depends(get_db)):
         if not bot_is_online(bot):
             continue
         inv = inv_repo.get(bot.id) or {}
+        names = inv_repo.get_names(bot.id) or {}
         for cat, items in inv.items():
             for key, count in (items or {}).items():
                 c = 1 if isinstance(count, dict) else int(count or 0)
                 if c <= 0:
                     continue
-                e = agg.setdefault((cat, key), {"total": 0, "bots": set()})
+                e = agg.setdefault((cat, key), {"total": 0, "bots": set(), "display": None})
                 e["total"] += c
                 e["bots"].add(bot.username)
+                if e["display"] is None:
+                    e["display"] = (names.get(cat) or {}).get(key)
     result = [
-        AvailableItem(category=c, item_key=k, total=v["total"], bots=sorted(v["bots"]))
-        for (c, k), v in sorted(agg.items())
+        AvailableItem(
+            category=c, item_key=k, display_name=v["display"] or k,
+            total=v["total"], bots=sorted(v["bots"]),
+        )
+        for (c, k), v in sorted(agg.items(), key=lambda kv: (kv[0][0], kv[1]["display"] or kv[0][1]))
     ]
     return {"items": result, "total": len(result)}
 
@@ -153,7 +159,7 @@ def claim_order(payload: ClaimRequest, response: Response, token: str = Depends(
     inv_repo = SqlAlchemyBotInventoryRepository(db)
     inventory = payload.inventory if payload.inventory is not None else inv_repo.get(bot.id)
     if payload.inventory is not None:
-        inv_repo.upsert(bot.id, payload.inventory)  # simpan yang terbaru
+        inv_repo.upsert(bot.id, payload.inventory, payload.names)  # simpan yang terbaru
     orders = SqlAlchemyOrderRepository(db)
     for order in orders.list_claimable():
         if can_fulfill(inventory, order.items):

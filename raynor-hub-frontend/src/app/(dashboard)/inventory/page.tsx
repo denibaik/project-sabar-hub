@@ -66,7 +66,7 @@ export default function InventoryPage() {
                 {items.map((it) => (
                   <tr key={it.category + it.item_key} className="border-b border-white/[0.05] hover:bg-white/[0.02]">
                     <td className="py-2.5 pr-4 text-slate-400">{it.category}</td>
-                    <td className="py-2.5 pr-4 font-medium text-slate-200">{it.item_key.length > 24 ? it.item_key.slice(0, 8) + "…" : it.item_key}</td>
+                    <td className="py-2.5 pr-4 font-medium text-slate-200">{it.display_name}</td>
                     <td className="py-2.5 pr-4 text-right font-mono text-slate-200">{it.total.toLocaleString("id-ID")}</td>
                     <td className="py-2.5 pr-4 text-xs text-slate-500">{it.bots.join(", ")}</td>
                     <td className="py-2.5"><Badge variant="outline" className={it.total <= LOW ? "border-amber-500/20 bg-amber-500/10 text-amber-300" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"}>{it.total <= LOW ? "Low" : "In Stock"}</Badge></td>

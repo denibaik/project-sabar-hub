@@ -39,7 +39,8 @@ export interface BackendOrder {
 
 export interface AvailableItem {
   category: string
-  item_key: string
+  item_key: string      // kunci asli untuk SendBatch (mis. UUID pet)
+  display_name: string  // nama ramah untuk UI (mis. "Golden Dragonfly")
   total: number
   bots: string[]
 }

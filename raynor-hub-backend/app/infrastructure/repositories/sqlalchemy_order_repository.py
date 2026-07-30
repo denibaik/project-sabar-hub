@@ -70,18 +70,37 @@ class SqlAlchemyOrderRepository:
 
 
 class SqlAlchemyBotInventoryRepository:
+    """Menyimpan stok + nama tampilan dalam satu kolom JSON.
+
+    Bentuk baru: {"stock": {...}, "names": {...}}
+    Bentuk lama (tanpa nama) tetap dibaca: seluruh dict dianggap stock.
+    """
+
     def __init__(self, db: Session):
         self.db = db
 
-    def upsert(self, bot_id: UUID, inventory: dict) -> None:
+    @staticmethod
+    def _split(blob: dict | None) -> tuple[dict, dict]:
+        blob = blob or {}
+        if "stock" in blob:
+            return blob.get("stock") or {}, blob.get("names") or {}
+        return blob, {}
+
+    def upsert(self, bot_id: UUID, inventory: dict, names: dict | None = None) -> None:
+        payload = {"stock": inventory or {}, "names": names or {}}
         row = self.db.get(BotInventoryModel, bot_id)
         if row is None:
-            self.db.add(BotInventoryModel(bot_id=bot_id, inventory=inventory or {}))
+            self.db.add(BotInventoryModel(bot_id=bot_id, inventory=payload))
         else:
-            row.inventory = inventory or {}
+            row.inventory = payload
             row.updated_at = _now()
         self.db.commit()
 
     def get(self, bot_id: UUID) -> dict:
+        """Stok saja — dipakai routing (bentuk yang sama seperti sebelumnya)."""
         row = self.db.get(BotInventoryModel, bot_id)
-        return (row.inventory or {}) if row else {}
+        return self._split(row.inventory if row else None)[0]
+
+    def get_names(self, bot_id: UUID) -> dict:
+        row = self.db.get(BotInventoryModel, bot_id)
+        return self._split(row.inventory if row else None)[1]

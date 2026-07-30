@@ -38,6 +38,7 @@ class OrderListResponse(BaseModel):
 class ClaimRequest(BaseModel):
     # bot boleh mengirim snapshot inventory terbaru (paling fresh untuk routing)
     inventory: dict[str, dict[str, int]] | None = None
+    names: dict[str, dict[str, str]] | None = None
 
 
 class ResultRequest(BaseModel):
@@ -50,7 +51,8 @@ class ResultRequest(BaseModel):
 
 class AvailableItem(BaseModel):
     category: str
-    item_key: str
+    item_key: str       # kunci asli untuk SendBatch (mis. UUID pet)
+    display_name: str   # nama ramah untuk UI (mis. "Golden Dragonfly")
     total: int          # total unit tersedia di semua bot online
     bots: list[str]     # username bot yang menyimpannya
 

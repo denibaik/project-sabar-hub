@@ -111,7 +111,7 @@ export default function OrdersPage() {
                       <option value="">— pilih item —</option>
                       {stock.map((it) => (
                         <option key={itemId(it)} value={itemId(it)}>
-                          {it.category} / {it.item_key.length > 26 ? it.item_key.slice(0, 8) + "…" : it.item_key} (stok {it.total})
+                          {it.category} / {it.display_name} (stok {it.total})
                         </option>
                       ))}
                     </select>
@@ -122,7 +122,7 @@ export default function OrdersPage() {
                       className={`h-9 rounded-lg border bg-slate-950 px-2 text-xs text-slate-200 outline-none ${over ? "border-rose-500/50" : "border-white/10 focus:border-indigo-400/50"}`}
                     />
                     <Button variant="ghost" size="icon" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((_, j) => j !== i) : rs)}><Trash2 className="h-4 w-4 text-slate-500" /></Button>
-                    {s && <p className={`col-span-3 -mt-1 text-[10px] ${over ? "text-rose-400" : "text-slate-600"}`}>{over ? `⚠ melebihi stok (${s.total})` : `tersedia ${s.total} di ${s.bots.join(", ")}`}</p>}
+                    {s && <p className={`col-span-3 -mt-1 text-[10px] ${over ? "text-rose-400" : "text-slate-600"}`}>{over ? `⚠ melebihi stok (${s.total})` : `${s.display_name} — tersedia ${s.total} di ${s.bots.join(", ")}`}</p>}
                   </div>
                 )
               })}

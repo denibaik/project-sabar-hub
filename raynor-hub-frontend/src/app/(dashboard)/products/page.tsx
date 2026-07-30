@@ -65,7 +65,7 @@ export default function ProductsPage() {
               {list.map((it) => (
                 <div key={it.item_key} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="min-w-0 truncate text-sm font-medium text-slate-200">{it.item_key.length > 20 ? it.item_key.slice(0, 8) + "…" : it.item_key}</p>
+                    <p className="min-w-0 truncate text-sm font-medium text-slate-200">{it.display_name}</p>
                     <Badge variant="outline" className="border-emerald-500/20 bg-emerald-500/10 text-emerald-300">{it.total}</Badge>
                   </div>
                   <p className="mt-2 truncate text-xs text-slate-600">di {it.bots.length} bot: {it.bots.join(", ")}</p>
