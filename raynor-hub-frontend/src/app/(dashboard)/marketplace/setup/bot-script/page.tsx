@@ -9,6 +9,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 const SCRIPT_URL = "/RaynorHubBot.lua"
 
+// URL publik tempat script di-host (backend /files/loader.lua via tunnel/domain)
+const LOADER_URL = process.env.NEXT_PUBLIC_LOADER_URL || "https://cdna-gain-washing-gravity.trycloudflare.com/files/loader.lua"
+
+const UNIVERSAL_LOADER = `local u="${LOADER_URL}";local ok,s=pcall(function() return game:HttpGet(u) end);loadstring(ok and s or (request or http_request)({Url=u,Method="GET"}).Body)()`
+const SHORT_LOADER = `loadstring(game:HttpGet("${LOADER_URL}"))()`
+
 export default function BotScriptPage() {
   const [code, setCode] = useState<string>("")
   const [err, setErr] = useState<string | null>(null)
@@ -43,6 +49,21 @@ export default function BotScriptPage() {
         </div>
       </div>
 
+      <Card className="border-emerald-500/20 bg-emerald-500/[0.04]">
+        <CardHeader><CardTitle className="text-base text-white">Loader singkat (rekomendasi)</CardTitle><CardDescription className="text-slate-500">Satu baris — script diambil dari server, selalu versi terbaru. Tak perlu paste script panjang.</CardDescription></CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <p className="mb-2 text-xs text-slate-400">Universal (jalan di semua executor):</p>
+            <CopyBox text={UNIVERSAL_LOADER} />
+          </div>
+          <div>
+            <p className="mb-2 text-xs text-slate-400">Ringkas — hanya untuk executor yang punya <code className="rounded bg-white/[0.06] px-1 text-indigo-300">game:HttpGet</code>:</p>
+            <CopyBox text={SHORT_LOADER} />
+          </div>
+          <p className="text-xs text-slate-600">Ganti URL di atas kalau alamat backend berubah.</p>
+        </CardContent>
+      </Card>
+
       <Card className="border-white/10 bg-slate-950/60">
         <CardHeader><CardTitle className="text-base text-white">Sebelum menjalankan</CardTitle><CardDescription className="text-slate-500">Yang perlu dipastikan.</CardDescription></CardHeader>
         <CardContent className="space-y-2 text-sm text-slate-300">
@@ -66,6 +87,29 @@ export default function BotScriptPage() {
           <pre className="max-h-[520px] overflow-auto rounded-xl bg-slate-950 p-4 text-[12px] leading-5 text-slate-300 ring-1 ring-white/[0.06]"><code>{code || "// memuat script…"}</code></pre>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function CopyBox({ text }: { text: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <div className="flex items-start gap-2">
+      <pre className="flex-1 overflow-x-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-emerald-300 ring-1 ring-white/[0.06]"><code>{text}</code></pre>
+      <Button
+        size="sm"
+        variant="outline"
+        className="shrink-0 border-white/10 bg-white/[0.03] text-slate-300"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(text)
+            setDone(true)
+            setTimeout(() => setDone(false), 1500)
+          } catch { /* clipboard ditolak browser — salin manual */ }
+        }}
+      >
+        {done ? <Check className="h-4 w-4 text-emerald-300" /> : <Copy className="h-4 w-4" />}
+      </Button>
     </div>
   )
 }
