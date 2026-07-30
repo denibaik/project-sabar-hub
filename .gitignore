@@ -25,3 +25,4 @@ raynor-hub-backend/*.egg-info/
 raynor-hub-backend/data/
 raynor-hub-backend/.env
 raynor-hub-backend/.env.local
+raynor-hub-backend/.venv/

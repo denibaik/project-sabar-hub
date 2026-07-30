@@ -10,6 +10,7 @@ class RegisterBotRequest(BaseModel):
 class BotHeartbeatRequest(BaseModel):
     server: str | None = None
     ping_ms: int | None = Field(default=None, ge=0, le=10000)
+    inventory: dict[str, dict[str, int]] | None = None  # {category: {item_key: count}} untuk routing stok
 class BotResponse(BaseModel):
     id: UUID; name: str; username: str; game: str; status: BotStatus; last_heartbeat_at: datetime | None; server: str | None; ping_ms: int | None
 class RegisterBotResponse(BaseModel):
