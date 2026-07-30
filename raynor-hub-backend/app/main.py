@@ -33,7 +33,7 @@ Base.metadata.create_all(bind=engine)
 app = FastAPI(title=settings.app_name, version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,6 +43,10 @@ def response(bot: Bot) -> BotResponse: return BotResponse(id=bot.id, name=bot.na
 
 def require_registration_key(key: str | None = Header(default=None, alias="X-Registration-Key")):
     if key != settings.bot_registration_key: raise HTTPException(status_code=401, detail="Invalid registration key")
+
+def require_admin(key: str | None = Header(default=None, alias="X-Admin-Key")):
+    # dipakai semua endpoint dashboard. Kunci ini HANYA boleh dipegang server-side (proxy Next.js), jangan di browser.
+    if key != settings.admin_api_key: raise HTTPException(status_code=401, detail="Admin key required")
 
 def authenticate_bot(authorization: str | None = Header(default=None)):
     if not authorization or not authorization.startswith("Bearer "): raise HTTPException(status_code=401, detail="Bearer token required")
@@ -97,7 +101,7 @@ def heartbeat(payload: BotHeartbeatRequest, token: str = Depends(authenticate_bo
         SqlAlchemyBotInventoryRepository(db).upsert(bot.id, payload.inventory, payload.names)
     return response(repo.save(bot))
 
-@app.get("/api/v1/bots", response_model=BotListResponse)
+@app.get("/api/v1/bots", response_model=BotListResponse, dependencies=[Depends(require_admin)])
 def list_bots(db: Session = Depends(get_db)):
     now = datetime.now(timezone.utc); items = []
     for bot in SqlAlchemyBotRepository(db).list():
@@ -109,20 +113,20 @@ def list_bots(db: Session = Depends(get_db)):
 
 # ============================ ORDERS / AUTO-SEND ============================
 
-@app.post("/api/v1/orders", response_model=OrderResponse, status_code=201, dependencies=[Depends(require_registration_key)])
+@app.post("/api/v1/orders", response_model=OrderResponse, status_code=201, dependencies=[Depends(require_admin)])
 def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)):
     items = [OrderItem(i.category, i.item_key, i.count) for i in payload.items]
     order = Order(uuid4(), payload.recipient.strip(), items, payload.note or "")
     return order_response(SqlAlchemyOrderRepository(db).create(order))
 
 
-@app.get("/api/v1/orders", response_model=OrderListResponse)
+@app.get("/api/v1/orders", response_model=OrderListResponse, dependencies=[Depends(require_admin)])
 def list_orders(db: Session = Depends(get_db)):
     items = [order_response(o) for o in SqlAlchemyOrderRepository(db).list()]
     return {"items": items, "total": len(items)}
 
 
-@app.get("/api/v1/items", response_model=ItemsResponse)
+@app.get("/api/v1/items", response_model=ItemsResponse, dependencies=[Depends(require_admin)])
 def list_items(db: Session = Depends(get_db)):
     # agregasi stok dari semua bot ONLINE (sumber routing yang sama)
     bot_repo = SqlAlchemyBotRepository(db)
@@ -204,19 +208,19 @@ def channel_response(c: Channel) -> ChannelResponse:
     )
 
 
-@app.get("/api/v1/channels", response_model=ChannelListResponse)
+@app.get("/api/v1/channels", response_model=ChannelListResponse, dependencies=[Depends(require_admin)])
 def list_channels(db: Session = Depends(get_db)):
     items = [channel_response(c) for c in SqlAlchemyChannelRepository(db).list()]
     return {"items": items, "total": len(items)}
 
 
-@app.post("/api/v1/channels", response_model=ChannelResponse, status_code=201, dependencies=[Depends(require_registration_key)])
+@app.post("/api/v1/channels", response_model=ChannelResponse, status_code=201, dependencies=[Depends(require_admin)])
 def create_channel(payload: CreateChannelRequest, db: Session = Depends(get_db)):
     ch = Channel(uuid4(), payload.type, payload.name.strip(), config=payload.config or {})
     return channel_response(SqlAlchemyChannelRepository(db).create(ch))
 
 
-@app.patch("/api/v1/channels/{channel_id}", response_model=ChannelResponse, dependencies=[Depends(require_registration_key)])
+@app.patch("/api/v1/channels/{channel_id}", response_model=ChannelResponse, dependencies=[Depends(require_admin)])
 def update_channel(channel_id: UUID, payload: UpdateChannelRequest, db: Session = Depends(get_db)):
     repo = SqlAlchemyChannelRepository(db)
     ch = repo.get(channel_id)
@@ -232,14 +236,14 @@ def update_channel(channel_id: UUID, payload: UpdateChannelRequest, db: Session 
     return channel_response(repo.save(ch))
 
 
-@app.delete("/api/v1/channels/{channel_id}", status_code=204, dependencies=[Depends(require_registration_key)])
+@app.delete("/api/v1/channels/{channel_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_channel(channel_id: UUID, db: Session = Depends(get_db)):
     if not SqlAlchemyChannelRepository(db).delete(channel_id):
         raise HTTPException(status_code=404, detail="Channel not found")
     return None
 
 
-@app.post("/api/v1/channels/{channel_id}/sync", response_model=SyncResult, dependencies=[Depends(require_registration_key)])
+@app.post("/api/v1/channels/{channel_id}/sync", response_model=SyncResult, dependencies=[Depends(require_admin)])
 def sync_channel(channel_id: UUID, db: Session = Depends(get_db)):
     repo = SqlAlchemyChannelRepository(db)
     ch = repo.get(channel_id)

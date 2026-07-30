@@ -1,8 +1,7 @@
-// Client HTTP asli ke backend FastAPI (menggantikan apiClient mock).
-// Dipakai oleh halaman bots & orders untuk data nyata.
+// Client dashboard → proxy Next.js (/api/backend) → backend FastAPI.
+// Semua lewat proxy same-origin: kunci disuntik server-side, TIDAK pernah di browser.
 
-export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://127.0.0.1:8000"
-const REG_KEY = process.env.NEXT_PUBLIC_REGISTRATION_KEY || "dev-registration-key"
+export const API_BASE = "/api/backend"
 
 export interface BackendBot {
   id: string
@@ -53,10 +52,7 @@ async function unwrap<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
-const regHeaders = {
-  "Content-Type": "application/json",
-  "X-Registration-Key": REG_KEY,
-}
+const jsonHeaders = { "Content-Type": "application/json" }
 
 export const backend = {
   async health(): Promise<boolean> {
@@ -77,7 +73,7 @@ export const backend = {
   async registerBot(name: string, username: string, game: string): Promise<{ bot: BackendBot; token: string }> {
     const r = await fetch(`${API_BASE}/api/v1/bots`, {
       method: "POST",
-      headers: regHeaders,
+      headers: jsonHeaders,
       body: JSON.stringify({ name, username, game }),
     })
     return unwrap<{ bot: BackendBot; token: string }>(r)
@@ -92,7 +88,7 @@ export const backend = {
   async createOrder(recipient: string, items: BackendOrderItem[], note = ""): Promise<BackendOrder> {
     const r = await fetch(`${API_BASE}/api/v1/orders`, {
       method: "POST",
-      headers: regHeaders,
+      headers: jsonHeaders,
       body: JSON.stringify({ recipient, items, note }),
     })
     return unwrap<BackendOrder>(r)
