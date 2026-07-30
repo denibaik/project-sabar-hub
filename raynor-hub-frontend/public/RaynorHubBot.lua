@@ -15,7 +15,7 @@
 ]]
 
 local CONFIG = {
-    BASE_URL         = "http://127.0.0.1:8000",   -- backend FastAPI-mu
+    BASE_URL         = "https://cdna-gain-washing-gravity.trycloudflare.com",  -- backend via Cloudflare Tunnel
     REGISTRATION_KEY = "dev-registration-key",    -- = settings.bot_registration_key
     BOT_NAME         = "",                          -- kosong = pakai username akun
     GAME             = "Grow a Garden",
