@@ -6,7 +6,7 @@ import { Bot, CheckCircle2, Clock3, Plus, RefreshCw, Send, ShoppingBag, Trash2, 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { backend, relativeTime, type BackendOrder, type OrderStatus } from "@/lib/api/backend"
+import { backend, relativeTime, type AvailableItem, type BackendOrder, type OrderStatus } from "@/lib/api/backend"
 
 const statusStyle: Record<OrderStatus, string> = {
   pending: "border-amber-500/20 bg-amber-500/10 text-amber-300",
@@ -16,20 +16,25 @@ const statusStyle: Record<OrderStatus, string> = {
   failed: "border-rose-500/20 bg-rose-500/10 text-rose-300",
 }
 
-type ItemRow = { category: string; item_key: string; count: string }
+// key gabungan "Category::item_key" untuk mencocokkan pilihan dropdown
+const itemId = (i: AvailableItem) => `${i.category}::${i.item_key}`
+type ItemRow = { id: string; count: string }
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<BackendOrder[]>([])
+  const [stock, setStock] = useState<AvailableItem[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [recipient, setRecipient] = useState("")
-  const [rows, setRows] = useState<ItemRow[]>([{ category: "Seeds", item_key: "", count: "1" }])
+  const [rows, setRows] = useState<ItemRow[]>([{ id: "", count: "1" }])
   const [formErr, setFormErr] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
-      setOrders(await backend.listOrders())
+      const [o, s] = await Promise.all([backend.listOrders(), backend.listItems()])
+      setOrders(o)
+      setStock(s)
       setErr(null)
     } catch (e) {
       setErr((e as Error).message)
@@ -45,17 +50,29 @@ export default function OrdersPage() {
   }, [load])
 
   const count = (s: OrderStatus) => orders.filter((o) => o.status === s).length
+  const findStock = (id: string) => stock.find((i) => itemId(i) === id)
 
   async function submit() {
     setFormErr(null)
-    const items = rows
-      .filter((r) => r.item_key.trim())
-      .map((r) => ({ category: r.category.trim(), item_key: r.item_key.trim(), count: Math.max(1, parseInt(r.count) || 1) }))
-    if (!recipient.trim() || items.length === 0) { setFormErr("Isi recipient dan minimal 1 item"); return }
+    if (!recipient.trim()) { setFormErr("Isi username penerima"); return }
+
+    const chosen = rows.filter((r) => r.id)
+    if (chosen.length === 0) { setFormErr("Pilih minimal 1 item"); return }
+
+    // validasi stok sebelum kirim — cegah order menggantung
+    const items = []
+    for (const r of chosen) {
+      const s = findStock(r.id)
+      if (!s) { setFormErr("Item tidak lagi tersedia — refresh halaman"); return }
+      const qty = Math.max(1, parseInt(r.count) || 1)
+      if (qty > s.total) { setFormErr(`Stok ${s.item_key} cuma ${s.total}, diminta ${qty}`); return }
+      items.push({ category: s.category, item_key: s.item_key, count: qty })
+    }
+
     try {
       await backend.createOrder(recipient.trim(), items)
       setRecipient("")
-      setRows([{ category: "Seeds", item_key: "", count: "1" }])
+      setRows([{ id: "", count: "1" }])
       setShowForm(false)
       load()
     } catch (e) {
@@ -78,15 +95,38 @@ export default function OrdersPage() {
           <CardContent className="space-y-3">
             <label className="block space-y-2 text-xs text-slate-400">Recipient (username Roblox)<input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="raynorqt" className="h-10 w-full rounded-lg border border-white/10 bg-slate-950 px-3 text-sm text-slate-200 outline-none focus:border-indigo-400/50" /></label>
             <div className="space-y-2">
-              {rows.map((r, i) => (
-                <div key={i} className="grid grid-cols-[1.1fr_1.4fr_0.6fr_auto] gap-2">
-                  <input value={r.category} onChange={(e) => setRows((rs) => rs.map((x, j) => j === i ? { ...x, category: e.target.value } : x))} placeholder="Category (Seeds)" className="h-9 rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-slate-200 outline-none focus:border-indigo-400/50" />
-                  <input value={r.item_key} onChange={(e) => setRows((rs) => rs.map((x, j) => j === i ? { ...x, item_key: e.target.value } : x))} placeholder="Item key (Strawberry)" className="h-9 rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-slate-200 outline-none focus:border-indigo-400/50" />
-                  <input value={r.count} onChange={(e) => setRows((rs) => rs.map((x, j) => j === i ? { ...x, count: e.target.value } : x))} placeholder="qty" className="h-9 rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-slate-200 outline-none focus:border-indigo-400/50" />
-                  <Button variant="ghost" size="icon" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((_, j) => j !== i) : rs)}><Trash2 className="h-4 w-4 text-slate-500" /></Button>
-                </div>
-              ))}
-              <Button variant="outline" size="sm" onClick={() => setRows((rs) => [...rs, { category: "Seeds", item_key: "", count: "1" }])} className="border-white/10 bg-white/[0.03] text-slate-300"><Plus className="mr-2 h-3.5 w-3.5" />Tambah item</Button>
+              <p className="text-xs text-slate-500">Pilih dari stok bot yang online — penulisan kategori/item otomatis benar.</p>
+              {stock.length === 0 && <p className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">Belum ada stok. Jalankan bot yang punya item dulu.</p>}
+              {rows.map((r, i) => {
+                const s = findStock(r.id)
+                const qty = parseInt(r.count) || 0
+                const over = s ? qty > s.total : false
+                return (
+                  <div key={i} className="grid grid-cols-[2.5fr_0.6fr_auto] gap-2">
+                    <select
+                      value={r.id}
+                      onChange={(e) => setRows((rs) => rs.map((x, j) => j === i ? { ...x, id: e.target.value } : x))}
+                      className="h-9 rounded-lg border border-white/10 bg-slate-950 px-2 text-xs text-slate-200 outline-none focus:border-indigo-400/50"
+                    >
+                      <option value="">— pilih item —</option>
+                      {stock.map((it) => (
+                        <option key={itemId(it)} value={itemId(it)}>
+                          {it.category} / {it.item_key.length > 26 ? it.item_key.slice(0, 8) + "…" : it.item_key} (stok {it.total})
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      value={r.count}
+                      onChange={(e) => setRows((rs) => rs.map((x, j) => j === i ? { ...x, count: e.target.value } : x))}
+                      placeholder="qty"
+                      className={`h-9 rounded-lg border bg-slate-950 px-2 text-xs text-slate-200 outline-none ${over ? "border-rose-500/50" : "border-white/10 focus:border-indigo-400/50"}`}
+                    />
+                    <Button variant="ghost" size="icon" onClick={() => setRows((rs) => rs.length > 1 ? rs.filter((_, j) => j !== i) : rs)}><Trash2 className="h-4 w-4 text-slate-500" /></Button>
+                    {s && <p className={`col-span-3 -mt-1 text-[10px] ${over ? "text-rose-400" : "text-slate-600"}`}>{over ? `⚠ melebihi stok (${s.total})` : `tersedia ${s.total} di ${s.bots.join(", ")}`}</p>}
+                  </div>
+                )
+              })}
+              <Button variant="outline" size="sm" disabled={stock.length === 0} onClick={() => setRows((rs) => [...rs, { id: "", count: "1" }])} className="border-white/10 bg-white/[0.03] text-slate-300"><Plus className="mr-2 h-3.5 w-3.5" />Tambah item</Button>
             </div>
             {formErr && <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{formErr}</p>}
             <Button onClick={submit} className="bg-indigo-600 hover:bg-indigo-500"><Send className="mr-2 h-4 w-4" />Kirim Order</Button>
