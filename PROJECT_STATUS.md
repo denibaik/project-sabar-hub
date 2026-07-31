@@ -74,6 +74,7 @@ Run berikutnya di akun yang sama tak perlu `BOT_TOKEN` lagi (tersimpan otomatis)
 - **Kirim gift sungguhan** — terbukti end-to-end.
 - **Dashboard** — Bots, Orders (form dropdown ber-stok), Inventory, Products, Dashboard.
   Semua data nyata, polling 3–5 detik.
+- **Auth bot cepat** — lookup token via prefix ber-index: 0,08 dtk pada 32 bot (dari 0,48 dtk pada 10 bot), latensi datar.
 - **Keamanan** — login dashboard (cookie httpOnly HMAC), semua endpoint kelola butuh
   `X-Admin-Key`, kunci hanya server-side (0 kebocoran ke browser), CORS dari env,
   kunci acak kuat, pencabutan token bot.
@@ -85,11 +86,12 @@ Run berikutnya di akun yang sama tak perlu `BOT_TOKEN` lagi (tersimpan otomatis)
 - **Integrasi API marketplace asli** — butuh kredensial Itemku/G2G/dll.
 - **Web store publik** — halaman pembeli belum dibuat.
 - **Backorder sweeper** — order tanpa bot ber-stok menggantung `pending` selamanya.
-- **Auth bot O(n)** — terukur 0,48 dtk pada 10 bot; perlu lookup by token-prefix.
+
 - **PostgreSQL + claim aman balapan**, **Alembic**, **rate limiting**, **TLS/systemd**.
 - Halaman `/` (index lama) & AI Control Center masih mock.
 
 Detail lengkap + prioritas: lihat **PRE_DEPLOY_AUDIT.md**.
+Panduan deploy VPS: lihat **DEPLOY_DIGITALOCEAN.md**.
 
 ---
 

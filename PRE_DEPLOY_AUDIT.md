@@ -71,28 +71,31 @@ Password lama (`changeme`) → 401. Kunci & password baru → 200. Proxy dashboa
 
 ## 🟠 SERIUS — akan menggigit saat dipakai sungguhan
 
-### 6. Autentikasi bot O(n) — TERUKUR 0,48 detik dengan 10 bot
+### 6. ~~Autentikasi bot O(n)~~ → SELESAI
+
+**Masalahnya:** `resolve_bot()` memuat SEMUA bot lalu menjalankan argon2 satu per
+satu. Argon2 sengaja lambat (~50 ms), jadi tiap request ber-auth memakan waktu
+sebanding jumlah bot. Endpoint `heartbeat` bahkan punya salinan pemindaian sendiri.
+
+**Perbaikannya:** token menyimpan prefix di kolom ber-index, sehingga pencarian
+menyempit ke satu baris dan argon2 cukup jalan **sekali**. Baris lama tanpa prefix
+dipindai sebagai fallback lalu diisi otomatis saat auth pertama — tak perlu migrasi
+token yang sudah ada.
+
 **[UJI]** Pengukuran nyata:
 
-| Request | Waktu |
-|---|---|
-| `POST /bots/heartbeat` (ber-auth) | **0,48 – 0,57 detik** |
-| `GET /bots` (tanpa auth) | 0,0034 detik |
+| | Sebelum | Sesudah |
+|---|---|---|
+| Jumlah bot | 10 | **32** |
+| Heartbeat ber-auth | **0,48 – 0,57 dtk** | **0,08 dtk** |
+| Bot pertama vs terakhir | — | 0,083 vs 0,081 (datar) |
+| Token invalid | — | 0,07 dtk → 401 |
 
-Selisihnya ~140×. Penyebabnya di `resolve_bot()`:
-```python
-repo.find_by_token_candidates()  # muat SEMUA bot
-... if verify_token(token, stored)  # argon2 satu per satu
-```
-Argon2 sengaja lambat (~50 ms). Dengan N bot, tiap request ber-auth melakukan
-sampai N verifikasi.
+Lebih cepat 6× dengan 3× lebih banyak bot, dan latensinya kini **datar** (O(1))
+alih-alih tumbuh linear.
 
-Proyeksi: 10 bot = 0,5 dtk · **50 bot ≈ 2,5 dtk per request**.
-Tiap bot claim tiap 5 detik + heartbeat tiap 15 detik → dengan 50 bot itu
-~12 request/detik yang masing-masing makan 2,5 detik CPU. VPS kecil tidak akan sanggup.
-
-**Perbaikan:** simpan prefix token (mis. 12 karakter pertama) di kolom ber-index,
-cari baris yang cocok dulu, lalu argon2 **sekali saja**.
+*Catatan:* penambahan kolom ditangani `ensure_columns()` — migrasi ringan idempoten
+saat startup, sampai Alembic dipasang (#10).
 
 ---
 
@@ -103,6 +106,10 @@ tanpa transaksi atau penguncian baris.
 **[UJI]** Aku uji 10 ronde × 5 bot claim bersamaan: **tidak pernah terjadi
 double-claim**. Jadi saat ini praktiknya aman — kemungkinan karena kunci tulis
 SQLite dan latensi argon2 (#6) tanpa sengaja menyerialkan permintaan.
+
+⚠️ **Setelah #6 diperbaiki, penyerialan tak sengaja itu berkurang drastis**
+(auth 0,48 dtk → 0,08 dtk), jadi jendela balapannya melebar. Ini menaikkan
+prioritas #7 — apalagi kalau pindah ke PostgreSQL.
 
 Tapi jangan andalkan itu. Begitu kamu pindah ke PostgreSQL, atau menjalankan
 uvicorn dengan `--workers > 1`, penyerialan tak sengaja itu hilang dan dua bot
@@ -147,11 +154,16 @@ Di produksi, tiap perubahan skema jadi pekerjaan manual berisiko.
 
 **Perbaikan:** pasang Alembic sebelum ada data produksi yang berharga.
 
-### 11. Isolasi test rusak
-**[UJI]** `pytest` gagal (1 dari 4) saat dijalankan dua kali beruntun, karena DB test
-tidak direset — bot mengklaim order sisa run sebelumnya. Setelah DB dihapus: 4/4 lolos.
-Kegagalannya palsu, tapi menyamarkan kegagalan asli.
+### 11. Isolasi test rusak ⚠️ SEBAGIAN
+**[UJI]** `pytest` gagal saat dijalankan dua kali beruntun, karena DB test tidak
+direset — bot mengklaim order sisa run sebelumnya.
 
+**Sudah diperbaiki:** test kini menetapkan kunci sendiri (`test-admin-key`,
+`test-registration-key`), jadi tidak lagi bergantung pada `.env` developer —
+sebelumnya rotasi kunci membuat seluruh suite gagal.
+
+**Masih tersisa:** DB test belum direset otomatis. Untuk sekarang jalankan
+`rm -f data/sqlite/test_sabar_hub.db` sebelum `pytest`.
 **Perbaikan:** fixture yang membuat DB bersih tiap sesi test.
 
 ### 12. `datetime.utcnow()` sudah deprecated
@@ -172,8 +184,9 @@ Deploy bersih akan gagal sebelum foldernya dibuat. (Aku sudah kena ini di lokal.
 Tiap tab dashboard menembak 2–3 endpoint tiap 3–5 detik, tanpa henti. Cukup untuk satu
 pengguna; boros kalau banyak tab/pengguna. Pertimbangkan SSE/WebSocket nanti.
 
-### 17. Belum ada TLS / reverse proxy / service manager
-Perlu nginx atau Caddy (TLS otomatis) + systemd agar backend hidup lagi setelah reboot.
+### 17. ~~Belum ada TLS / reverse proxy / service manager~~ → ADA PANDUANNYA
+Lihat **DEPLOY_DIGITALOCEAN.md**: Caddy (TLS otomatis) + systemd + PostgreSQL,
+langkah demi langkah. Belum dieksekusi — jalankan saat deploy.
 
 ---
 
