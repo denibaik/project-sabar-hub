@@ -22,11 +22,25 @@ export interface BackendOrderItem {
 
 export type OrderStatus = "pending" | "processing" | "done" | "partial" | "failed"
 
+export type OrderSource =
+  | "manual" | "google_sheet" | "vcgamers" | "u7buy" | "itemku" | "g2g" | "eldorado" | "webstore"
+
+export interface OrderPage {
+  items: BackendOrder[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+  counts: Partial<Record<OrderStatus, number>>
+  sources: Record<string, number>
+}
+
 export interface BackendOrder {
   id: string
   recipient: string
   items: BackendOrderItem[]
   note: string
+  source: string
   status: OrderStatus
   assigned_bot: string | null
   sent_total: number
@@ -105,17 +119,19 @@ export const backend = {
     if (!r.ok && r.status !== 204) throw new Error(`HTTP ${r.status}`)
   },
 
-  async listOrders(): Promise<BackendOrder[]> {
-    const r = await fetch(`${API_BASE}/api/v1/orders`, { cache: "no-store" })
-    const d = await unwrap<{ items: BackendOrder[]; total: number }>(r)
-    return d.items
+  /** Satu halaman order. `counts`/`sources` mencakup SEMUA order, bukan halaman ini. */
+  async listOrders(page = 1, pageSize = 10, source?: string): Promise<OrderPage> {
+    const q = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+    if (source) q.set("source", source)
+    const r = await fetch(`${API_BASE}/api/v1/orders?${q}`, { cache: "no-store" })
+    return unwrap<OrderPage>(r)
   },
 
-  async createOrder(recipient: string, items: BackendOrderItem[], note = ""): Promise<BackendOrder> {
+  async createOrder(recipient: string, items: BackendOrderItem[], note = "", source = "manual"): Promise<BackendOrder> {
     const r = await fetch(`${API_BASE}/api/v1/orders`, {
       method: "POST",
       headers: jsonHeaders,
-      body: JSON.stringify({ recipient, items, note }),
+      body: JSON.stringify({ recipient, items, note, source }),
     })
     return unwrap<BackendOrder>(r)
   },

@@ -1,12 +1,27 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Bot, CheckCircle2, Clock3, Plus, RefreshCw, Send, ShoppingBag, Trash2, UserRound, X } from "lucide-react"
+import { Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Plus, RefreshCw, Send, ShoppingBag, Trash2, UserRound, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { backend, relativeTime, type AvailableItem, type BackendOrder, type OrderStatus } from "@/lib/api/backend"
+
+const PAGE_SIZE = 10
+
+// Label + warna per kanal asal order
+const sourceStyle: Record<string, { label: string; cls: string }> = {
+  manual:       { label: "Manual",       cls: "border-slate-500/20 bg-slate-500/10 text-slate-300" },
+  google_sheet: { label: "Google Sheet", cls: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300" },
+  vcgamers:     { label: "VCGamers",     cls: "border-violet-500/20 bg-violet-500/10 text-violet-300" },
+  u7buy:        { label: "U7Buy",        cls: "border-sky-500/20 bg-sky-500/10 text-sky-300" },
+  itemku:       { label: "Itemku",       cls: "border-pink-500/20 bg-pink-500/10 text-pink-300" },
+  g2g:          { label: "G2G",          cls: "border-orange-500/20 bg-orange-500/10 text-orange-300" },
+  eldorado:     { label: "Eldorado",     cls: "border-amber-500/20 bg-amber-500/10 text-amber-300" },
+  webstore:     { label: "Web Store",    cls: "border-cyan-500/20 bg-cyan-500/10 text-cyan-300" },
+}
+const srcOf = (s: string) => sourceStyle[s] ?? { label: s || "manual", cls: "border-slate-600 bg-slate-800/70 text-slate-400" }
 
 const statusStyle: Record<OrderStatus, string> = {
   pending: "border-amber-500/20 bg-amber-500/10 text-amber-300",
@@ -22,6 +37,10 @@ type ItemRow = { id: string; count: string }
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<BackendOrder[]>([])
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [counts, setCounts] = useState<Partial<Record<OrderStatus, number>>>({})
   const [stock, setStock] = useState<AvailableItem[]>([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState<string | null>(null)
@@ -32,8 +51,11 @@ export default function OrdersPage() {
 
   const load = useCallback(async () => {
     try {
-      const [o, s] = await Promise.all([backend.listOrders(), backend.listItems()])
-      setOrders(o)
+      const [o, s] = await Promise.all([backend.listOrders(page, PAGE_SIZE), backend.listItems()])
+      setOrders(o.items)
+      setTotal(o.total)
+      setTotalPages(o.total_pages)
+      setCounts(o.counts)
       setStock(s)
       setErr(null)
     } catch (e) {
@@ -41,7 +63,7 @@ export default function OrdersPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [page])
 
   useEffect(() => {
     load()
@@ -49,7 +71,8 @@ export default function OrdersPage() {
     return () => clearInterval(t)
   }, [load])
 
-  const count = (s: OrderStatus) => orders.filter((o) => o.status === s).length
+  // dari `counts` backend: mencakup SEMUA order, bukan cuma halaman ini
+  const count = (s: OrderStatus) => counts[s] ?? 0
   const findStock = (id: string) => stock.find((i) => itemId(i) === id)
 
   async function submit() {
@@ -74,6 +97,7 @@ export default function OrdersPage() {
       setRecipient("")
       setRows([{ id: "", count: "1" }])
       setShowForm(false)
+      setPage(1)
       load()
     } catch (e) {
       setFormErr((e as Error).message)
@@ -135,20 +159,20 @@ export default function OrdersPage() {
       )}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Summary label="Total Orders" value={String(orders.length)} detail="semua status" icon={ShoppingBag} color="text-indigo-300" />
+        <Summary label="Total Orders" value={String(total)} detail="semua status" icon={ShoppingBag} color="text-indigo-300" />
         <Summary label="Pending" value={String(count("pending"))} detail="menunggu bot ber-stok" icon={Clock3} color="text-amber-300" />
         <Summary label="Processing" value={String(count("processing"))} detail="sedang dikirim" icon={Send} color="text-cyan-300" />
         <Summary label="Done" value={String(count("done"))} detail="terkirim & terverifikasi" icon={CheckCircle2} color="text-emerald-300" />
       </section>
 
       <Card className="border-white/10 bg-slate-950/60 shadow-xl shadow-black/10">
-        <CardHeader><CardTitle className="text-lg text-white">Fulfillment Queue</CardTitle><CardDescription className="text-slate-500">Diperbarui otomatis tiap 3 detik</CardDescription></CardHeader>
+        <CardHeader><CardTitle className="text-lg text-white">Fulfillment Queue</CardTitle><CardDescription className="text-slate-500">{total > 0 ? `Menampilkan ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, total)} dari ${total}` : "Belum ada order"} · diperbarui tiap 3 detik</CardDescription></CardHeader>
         <CardContent className="space-y-4">
           {orders.length === 0 && !loading && <p className="text-sm text-slate-500">Belum ada order. Klik &quot;New Order&quot; untuk membuat.</p>}
           {orders.map((order) => (
             <article key={order.id} className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4 transition-colors hover:border-indigo-400/20 md:p-5">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-mono text-sm font-medium text-indigo-300">{order.id.slice(0, 8)}</p><Badge variant="outline" className={statusStyle[order.status]}>{order.status}</Badge>{order.error && <span className="text-[10px] text-rose-400/80">{order.error}</span>}</div></div>
+                <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-mono text-sm font-medium text-indigo-300">{order.id.slice(0, 8)}</p><Badge variant="outline" className={statusStyle[order.status]}>{order.status}</Badge><Badge variant="outline" className={srcOf(order.source).cls}>{srcOf(order.source).label}</Badge>{order.error && <span className="text-[10px] text-rose-400/80">{order.error}</span>}</div></div>
                 <div className="flex items-center gap-2 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" />{relativeTime(order.updated_at || order.created_at)}</div>
               </div>
               <div className="mt-5 grid gap-4 border-t border-white/[0.06] pt-5 md:grid-cols-2 xl:grid-cols-[1fr_1.6fr_0.6fr_0.8fr]">
@@ -159,6 +183,26 @@ export default function OrdersPage() {
               </div>
             </article>
           ))}
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-3 pt-2 text-sm">
+              <Button
+                variant="outline" size="sm" disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="border-white/10 bg-white/[0.03] text-slate-300 disabled:opacity-40"
+              ><ChevronLeft className="h-4 w-4" /></Button>
+
+              <span className="text-slate-400">
+                Total: {total} &nbsp;<span className="text-white">{page}</span> / {totalPages}
+              </span>
+
+              <Button
+                variant="outline" size="sm" disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="border-white/10 bg-white/[0.03] text-slate-300 disabled:opacity-40"
+              ><ChevronRight className="h-4 w-4" /></Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

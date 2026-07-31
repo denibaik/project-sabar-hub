@@ -19,12 +19,25 @@ class OrderItem:
     count: int
 
 
+class OrderSource(StrEnum):
+    """Dari mana order berasal — untuk memisahkan penjualan per kanal."""
+    MANUAL = "manual"            # dibuat lewat form dashboard
+    GOOGLE_SHEET = "google_sheet"
+    VCGAMERS = "vcgamers"
+    U7BUY = "u7buy"
+    ITEMKU = "itemku"
+    G2G = "g2g"
+    ELDORADO = "eldorado"
+    WEBSTORE = "webstore"
+
+
 @dataclass
 class Order:
     id: UUID
     recipient: str
     items: list[OrderItem]
     note: str = ""
+    source: str = OrderSource.MANUAL.value
     status: OrderStatus = OrderStatus.PENDING
     assigned_bot: str | None = None
     sent_total: int = 0

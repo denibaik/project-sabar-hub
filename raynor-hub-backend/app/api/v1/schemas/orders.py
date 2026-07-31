@@ -14,6 +14,8 @@ class CreateOrderRequest(BaseModel):
     recipient: str = Field(min_length=2, max_length=120)
     items: list[OrderItemSchema] = Field(min_length=1, max_length=50)
     note: str = ""
+    # dari mana order berasal: manual, google_sheet, vcgamers, u7buy, ...
+    source: str = Field(default="manual", max_length=30)
 
 
 class OrderResponse(BaseModel):
@@ -21,6 +23,7 @@ class OrderResponse(BaseModel):
     recipient: str
     items: list[OrderItemSchema]
     note: str
+    source: str
     status: OrderStatus
     assigned_bot: str | None
     sent_total: int
@@ -32,7 +35,14 @@ class OrderResponse(BaseModel):
 
 class OrderListResponse(BaseModel):
     items: list[OrderResponse]
-    total: int
+    total: int                       # total baris yang cocok filter (bukan cuma halaman ini)
+    page: int = 1
+    page_size: int = 10
+    total_pages: int = 1
+    # jumlah per status & per sumber untuk SELURUH order — supaya kartu ringkasan
+    # tidak ikut berubah saat pindah halaman
+    counts: dict[str, int] = {}
+    sources: dict[str, int] = {}
 
 
 class ClaimRequest(BaseModel):

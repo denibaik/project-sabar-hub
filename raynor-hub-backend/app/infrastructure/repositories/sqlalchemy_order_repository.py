@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 from app.domain.orders.entities import Order, OrderItem, OrderStatus
 from app.infrastructure.database.models.order import OrderModel, BotInventoryModel
@@ -18,7 +18,7 @@ class SqlAlchemyOrderRepository:
     def _to_entity(self, row: OrderModel) -> Order:
         items = [OrderItem(i["category"], i["item_key"], int(i["count"])) for i in (row.items or [])]
         return Order(
-            row.id, row.recipient, items, row.note, OrderStatus(row.status), row.assigned_bot,
+            row.id, row.recipient, items, row.note, row.source or "manual", OrderStatus(row.status), row.assigned_bot,
             row.sent_total, row.requested_total, row.error, row.release_count,
             row.next_retry_at, row.created_at, row.updated_at,
         )
@@ -27,7 +27,7 @@ class SqlAlchemyOrderRepository:
         row = OrderModel(
             id=order.id, recipient=order.recipient,
             items=[{"category": i.category, "item_key": i.item_key, "count": i.count} for i in order.items],
-            note=order.note, status=order.status.value,
+            note=order.note, source=order.source or "manual", status=order.status.value,
             requested_total=order.total_requested,
         )
         self.db.add(row); self.db.commit()
@@ -40,6 +40,41 @@ class SqlAlchemyOrderRepository:
     def list(self) -> list[Order]:
         rows = self.db.scalars(select(OrderModel).order_by(OrderModel.created_at.desc())).all()
         return [self._to_entity(r) for r in rows]
+
+    def list_page(self, page: int = 1, page_size: int = 10,
+                  source: str | None = None, status: str | None = None) -> tuple[list[Order], int]:
+        """Satu halaman order (terbaru dulu) + total baris yang cocok filter."""
+        stmt = select(OrderModel)
+        count_stmt = select(func.count()).select_from(OrderModel)
+        if source:
+            stmt = stmt.where(OrderModel.source == source)
+            count_stmt = count_stmt.where(OrderModel.source == source)
+        if status:
+            stmt = stmt.where(OrderModel.status == status)
+            count_stmt = count_stmt.where(OrderModel.status == status)
+
+        total = self.db.scalar(count_stmt) or 0
+        page = max(1, page)
+        page_size = max(1, min(page_size, 100))
+        rows = self.db.scalars(
+            stmt.order_by(OrderModel.created_at.desc())
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+        ).all()
+        return [self._to_entity(r) for r in rows], total
+
+    def count_by_status(self) -> dict[str, int]:
+        """Jumlah order per status — untuk kartu ringkasan, terlepas dari halaman."""
+        rows = self.db.execute(
+            select(OrderModel.status, func.count()).group_by(OrderModel.status)
+        ).all()
+        return {status: n for status, n in rows}
+
+    def count_by_source(self) -> dict[str, int]:
+        rows = self.db.execute(
+            select(OrderModel.source, func.count()).group_by(OrderModel.source)
+        ).all()
+        return {(src or "manual"): n for src, n in rows}
 
     def list_claimable(self) -> list[Order]:
         now = _now()

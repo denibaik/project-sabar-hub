@@ -187,7 +187,7 @@ def order_response(o: Order) -> OrderResponse:
     return OrderResponse(
         id=o.id, recipient=o.recipient,
         items=[{"category": i.category, "item_key": i.item_key, "count": i.count} for i in o.items],
-        note=o.note, status=o.status, assigned_bot=o.assigned_bot,
+        note=o.note, source=o.source or "manual", status=o.status, assigned_bot=o.assigned_bot,
         sent_total=o.sent_total, requested_total=o.requested_total, error=o.error,
         created_at=o.created_at, updated_at=o.updated_at,
     )
@@ -379,14 +379,36 @@ def delete_bot(bot_id: UUID, db: Session = Depends(get_db)):
 @app.post("/api/v1/orders", response_model=OrderResponse, status_code=201, dependencies=[Depends(require_admin)])
 def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)):
     items = [OrderItem(i.category, i.item_key, i.count) for i in payload.items]
-    order = Order(uuid4(), payload.recipient.strip(), items, payload.note or "")
+    order = Order(uuid4(), payload.recipient.strip(), items, payload.note or "",
+                  source=(payload.source or "manual").strip().lower())
     return order_response(SqlAlchemyOrderRepository(db).create(order))
 
 
 @app.get("/api/v1/orders", response_model=OrderListResponse, dependencies=[Depends(require_admin)])
-def list_orders(db: Session = Depends(get_db)):
-    items = [order_response(o) for o in SqlAlchemyOrderRepository(db).list()]
-    return {"items": items, "total": len(items)}
+def list_orders(
+    page: int = 1,
+    page_size: int = 10,
+    source: str | None = None,
+    status: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Daftar order per halaman.
+
+    `counts`/`sources` dihitung dari SELURUH order, bukan halaman ini, agar kartu
+    ringkasan tetap benar saat berpindah halaman.
+    """
+    repo = SqlAlchemyOrderRepository(db)
+    rows, total = repo.list_page(page=page, page_size=page_size, source=source, status=status)
+    size = max(1, min(page_size, 100))
+    return {
+        "items": [order_response(o) for o in rows],
+        "total": total,
+        "page": max(1, page),
+        "page_size": size,
+        "total_pages": max(1, (total + size - 1) // size),
+        "counts": repo.count_by_status(),
+        "sources": repo.count_by_source(),
+    }
 
 
 @app.get("/api/v1/items", response_model=ItemsResponse, dependencies=[Depends(require_admin)])
@@ -566,7 +588,7 @@ def sync_google_sheet(db: Session, ch: Channel) -> dict:
 
         try:
             order = Order(uuid4(), recipient.strip(), [OrderItem(category, item_key, count)],
-                          note=f"gsheet:{ref}")
+                          note=f"gsheet:{ref}", source="google_sheet")
             orders.create(order)
             imported += 1
             new_refs.append(ref)

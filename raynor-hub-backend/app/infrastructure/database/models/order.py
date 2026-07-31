@@ -15,6 +15,7 @@ class OrderModel(Base):
     recipient: Mapped[str] = mapped_column(String(120), index=True)
     items: Mapped[list] = mapped_column(JSON, default=list)  # [{category, item_key, count}]
     note: Mapped[str] = mapped_column(String(300), default="")
+    source: Mapped[str] = mapped_column(String(30), default="manual", index=True)
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
     assigned_bot: Mapped[str | None] = mapped_column(String(120), nullable=True)
     sent_total: Mapped[int] = mapped_column(Integer, default=0)

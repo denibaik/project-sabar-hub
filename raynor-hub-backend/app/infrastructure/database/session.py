@@ -29,6 +29,7 @@ def ensure_columns() -> None:
 
     wanted = {
         "bots": {"token_prefix": "VARCHAR(32)"},
+        "orders": {"source": "VARCHAR(30) DEFAULT 'manual'"},
     }
     insp = inspect(engine)
     with engine.begin() as conn:

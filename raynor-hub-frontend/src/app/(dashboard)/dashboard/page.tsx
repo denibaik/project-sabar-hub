@@ -20,12 +20,14 @@ export default function DashboardPage() {
   const [bots, setBots] = useState<BackendBot[]>([])
   const [orders, setOrders] = useState<BackendOrder[]>([])
   const [items, setItems] = useState<AvailableItem[]>([])
+  const [counts, setCounts] = useState<Partial<Record<OrderStatus, number>>>({})
   const [err, setErr] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const [b, o, i] = await Promise.all([backend.listBots(), backend.listOrders(), backend.listItems()])
-      setBots(b); setOrders(o); setItems(i); setErr(null)
+      // cukup 6 order terbaru untuk daftar; angka ringkasan diambil dari `counts`
+      const [b, o, i] = await Promise.all([backend.listBots(), backend.listOrders(1, 6), backend.listItems()])
+      setBots(b); setOrders(o.items); setCounts(o.counts); setItems(i); setErr(null)
     } catch (e) {
       setErr((e as Error).message)
     }
@@ -38,11 +40,12 @@ export default function DashboardPage() {
   }, [load])
 
   const online = bots.filter((b) => b.status === "online").length
-  const open = orders.filter((o) => o.status === "pending" || o.status === "processing").length
-  const done = orders.filter((o) => o.status === "done").length
-  const failed = orders.filter((o) => o.status === "failed").length
+  // dari backend: mencakup SEMUA order, bukan 6 yang ditampilkan
+  const open = (counts.pending ?? 0) + (counts.processing ?? 0)
+  const done = counts.done ?? 0
+  const failed = counts.failed ?? 0
   const totalUnits = items.reduce((s, i) => s + i.total, 0)
-  const recent = orders.slice(0, 6)
+  const recent = orders
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 text-slate-100">
