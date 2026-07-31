@@ -189,6 +189,25 @@ local function tokenHelp()
     log("        loadstring(...)()")
 end
 
+-- Sebutkan executor & kemampuannya. Kalau ada yang tak berjalan di executor
+-- tertentu, baris ini yang memberi tahu penyebabnya tanpa perlu menebak.
+--
+-- Penyimpanan berkas bersifat opsional: tanpanya bot tetap jalan, hanya saja
+-- token tidak diingat sehingga harus diset ulang setiap kali dijalankan. Ini
+-- lazim pada executor mobile.
+local function laporLingkungan()
+    local nama = "tidak diketahui"
+    if identifyexecutor then
+        local ok, n = pcall(identifyexecutor)
+        if ok and n then nama = tostring(n) end
+    end
+    local simpanBerkas = (writefile and readfile and isfile) and true or false
+    log(("executor=%s · simpan token=%s"):format(nama, simpanBerkas and "ya" or "TIDAK"))
+    if not simpanBerkas then
+        log("   executor ini tak bisa menyimpan berkas — set getgenv().BOT_TOKEN tiap kali menjalankan.")
+    end
+end
+
 --============================ FULFILL ============================
 -- order dari backend: {id, recipient, items:[{category,item_key,count}], note}
 local function processOrder(order)
@@ -252,6 +271,7 @@ local function processOrder(order)
 end
 
 --============================ RUN ============================
+laporLingkungan()
 local token = readToken()
 if not token then tokenHelp(); return end
 local function authH() return { ["Authorization"] = "Bearer " .. token } end

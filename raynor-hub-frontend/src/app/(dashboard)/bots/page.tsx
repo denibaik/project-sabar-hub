@@ -16,7 +16,7 @@ const statusStyle: Record<string, string> = {
 const statusLabel: Record<string, string> = { online: "Online", offline: "Offline", maintenance: "Maintenance" }
 
 const LOADER_URL = process.env.NEXT_PUBLIC_LOADER_URL || "http://127.0.0.1:8000/files/loader.lua"
-const LOADER_SNIPPET = `local u="${LOADER_URL}";local ok,s=pcall(function() return game:HttpGet(u) end);loadstring(ok and s or (request or http_request)({Url=u,Method="GET"}).Body)()`
+const LOADER_SNIPPET = `local u="${LOADER_URL}";local ok,s=pcall(function() return game:HttpGet(u) end);if not ok then s=(request or http_request or (syn and syn.request))({Url=u,Method="GET"}).Body end;(loadstring or load)(s)()`
 
 export default function BotsPage() {
   const [bots, setBots] = useState<BackendBot[]>([])

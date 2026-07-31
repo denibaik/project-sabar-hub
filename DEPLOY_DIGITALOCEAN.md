@@ -276,7 +276,7 @@ Harus keluar `{"status":"ok",...}`.
 3. Di executor akun bot:
 ```lua
 getgenv().BOT_TOKEN = "sbr_bot_xxxxx"
-local u="https://api.domainmu.com/files/loader.lua";local ok,s=pcall(function() return game:HttpGet(u) end);loadstring(ok and s or (request or http_request)({Url=u,Method="GET"}).Body)()
+local u="https://api.domainmu.com/files/loader.lua";local ok,s=pcall(function() return game:HttpGet(u) end);if not ok then s=(request or http_request or (syn and syn.request))({Url=u,Method="GET"}).Body end;(loadstring or load)(s)()
 ```
 
 > **Alamat backend untuk bot** diatur lewat `PUBLIC_API_URL` di

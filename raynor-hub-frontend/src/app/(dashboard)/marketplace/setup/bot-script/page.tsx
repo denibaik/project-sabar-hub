@@ -12,8 +12,8 @@ const SCRIPT_URL = "/RaynorHubBot.lua"
 // URL publik tempat script di-host (backend /files/loader.lua via tunnel/domain)
 const LOADER_URL = process.env.NEXT_PUBLIC_LOADER_URL || "https://cdna-gain-washing-gravity.trycloudflare.com/files/loader.lua"
 
-const UNIVERSAL_LOADER = `local u="${LOADER_URL}";local ok,s=pcall(function() return game:HttpGet(u) end);loadstring(ok and s or (request or http_request)({Url=u,Method="GET"}).Body)()`
-const SHORT_LOADER = `loadstring(game:HttpGet("${LOADER_URL}"))()`
+const UNIVERSAL_LOADER = `local u="${LOADER_URL}";local ok,s=pcall(function() return game:HttpGet(u) end);if not ok then s=(request or http_request or (syn and syn.request))({Url=u,Method="GET"}).Body end;(loadstring or load)(s)()`
+const SHORT_LOADER = `(loadstring or load)(game:HttpGet("${LOADER_URL}"))()`
 
 export default function BotScriptPage() {
   const [code, setCode] = useState<string>("")
