@@ -65,6 +65,28 @@ export interface BackendChannel {
   updated_at: string | null
 }
 
+/** Satu notifikasi webhook beserta nasibnya setelah diproses. */
+export interface WebhookEvent {
+  id: string
+  source: string
+  event: string
+  dedupe_key: string
+  /** received = belum diproses · processed · ignored · failed */
+  status: string
+  error: string | null
+  received_at: string | null
+  processed_at: string | null
+}
+
+/** Satu baris pemetaan produk U7Buy → item katalog game. */
+export interface U7BuyProduct {
+  category: string
+  item_key: string
+  per_unit: number
+  /** nama produk di U7Buy — hanya acuan manusia, tidak dipakai sistem */
+  _produk?: string
+}
+
 export interface SyncResult {
   imported: number
   skipped: number
@@ -167,6 +189,12 @@ export const backend = {
   async syncChannel(id: string): Promise<SyncResult> {
     const r = await fetch(`${API_BASE}/api/v1/channels/${id}/sync`, { method: "POST" })
     return unwrap<SyncResult>(r)
+  },
+
+  async listWebhookEvents(): Promise<WebhookEvent[]> {
+    const r = await fetch(`${API_BASE}/api/v1/webhooks/events`, { cache: "no-store" })
+    const d = await unwrap<{ items: WebhookEvent[]; total: number }>(r)
+    return d.items
   },
 
   async listItems(): Promise<AvailableItem[]> {
