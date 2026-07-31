@@ -33,6 +33,8 @@ local CONFIG = {
     GIFT_COOLDOWN    = 10,     -- detik jeda antar batch dalam 1 order (>~8s cooldown game)
     MAX_VERIFY_WAIT  = 3.0,    -- detik menunggu replica utk verifikasi kirim
     DRY_RUN          = false,  -- false = KIRIM SUNGGUHAN. true = simulasi.
+    ANTI_AFK         = true,   -- cegah bot dipindah server / ditendang karena diam
+    ANTI_AFK_EVERY   = 60,     -- detik antar penyegaran
 }
 
 --============================ SETUP ============================
@@ -253,6 +255,47 @@ end
 local token = readToken()
 if not token then tokenHelp(); return end
 local function authH() return { ["Authorization"] = "Bearer " .. token } end
+
+-- anti-AFK
+--
+-- Game ini punya AntiAfkController sendiri: setelah `Game.AntiAfk.IdleSeconds`
+-- (bawaan 1140 dtk / 19 menit) tanpa aktivitas, ia memanggil RequestHop dan
+-- akun dipindah server — yang mematikan script ini.
+--
+-- Yang dianggap "aktivitas" oleh controller itu HANYA input sungguhan:
+-- InputBegan (keyboard/klik/gamepad), gerak mouse sambil klik kanan, thumbstick,
+-- dan sentuhan. Melompat atau berjalan TIDAK mereset apa pun — begitu juga
+-- VirtualUser, yang sudah diuji dan ternyata tidak memicu UserInputService.
+--
+-- Yang bekerja adalah atribut yang dibaca controller-nya sendiri saat menghitung
+-- ambang batas. Nilainya disetel lokal, tidak direplikasi ke server.
+--
+-- VirtualUser tetap dipasang sebagai lapis kedua, untuk penendang idle bawaan
+-- Roblox (20 menit) yang terpisah dari sistem game.
+if CONFIG.ANTI_AFK then
+    local okVU, VU = pcall(function() return game:GetService("VirtualUser") end)
+    if okVU and VU then
+        pcall(function()
+            player.Idled:Connect(function()
+                pcall(function()
+                    VU:CaptureController()
+                    VU:ClickButton2(Vector3.new())
+                end)
+            end)
+        end)
+    end
+
+    task.spawn(function()
+        while stillMe() do
+            -- disegarkan berkala, bukan sekali saja: kalau server menimpa
+            -- atributnya, nilainya kembali dalam waktu paling lama semenit.
+            pcall(function() player:SetAttribute("AntiAfkIdleOverride", 31536000) end)
+            task.wait(CONFIG.ANTI_AFK_EVERY)
+        end
+        pcall(function() player:SetAttribute("AntiAfkIdleOverride", nil) end)
+    end)
+    log("anti-AFK aktif")
+end
 
 -- heartbeat loop (dengan inventory utk routing)
 task.spawn(function()
