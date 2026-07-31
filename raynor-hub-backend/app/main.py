@@ -37,30 +37,44 @@ import urllib.request as _urlreq
 
 Base.metadata.create_all(bind=engine)
 ensure_columns()  # tambah kolom baru pada DB lama (sampai Alembic dipasang)
+async def _periodic(label: str, interval: int, fn):
+    """Jalankan `fn(db)` tiap `interval` detik. Error dicatat, tidak mematikan app."""
+    from app.infrastructure.database.session import SessionLocal
+    while True:
+        await asyncio.sleep(interval)
+        db = SessionLocal()
+        try:
+            n = await asyncio.to_thread(fn, db)
+            if n:
+                print(f"[{label}] {n}")
+        except Exception as e:  # noqa: BLE001
+            print(f"[{label}] error: {e}")
+        finally:
+            db.close()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """Jalankan backorder sweeper berkala selama aplikasi hidup."""
-    task = None
+    """Tugas berkala: sapu order kedaluwarsa, dan tarik order dari Google Sheet."""
+    tasks = []
+
     if settings.order_stale_seconds > 0 and settings.sweeper_interval_seconds > 0:
-        async def loop():
-            from app.infrastructure.database.session import SessionLocal
-            while True:
-                await asyncio.sleep(settings.sweeper_interval_seconds)
-                db = SessionLocal()
-                try:
-                    n = await asyncio.to_thread(sweep_stale_orders, db)
-                    if n:
-                        print(f"[sweeper] {n} order kedaluwarsa ditandai failed")
-                except Exception as e:  # noqa: BLE001 — sweeper tak boleh mematikan app
-                    print(f"[sweeper] error: {e}")
-                finally:
-                    db.close()
-        task = asyncio.create_task(loop())
+        tasks.append(asyncio.create_task(_periodic(
+            "sweeper", settings.sweeper_interval_seconds,
+            lambda db: (lambda n: f"{n} order kedaluwarsa ditandai failed" if n else 0)(sweep_stale_orders(db)),
+        )))
+
+    if settings.sheet_sync_interval_seconds > 0:
+        tasks.append(asyncio.create_task(_periodic(
+            "sheet-sync", settings.sheet_sync_interval_seconds,
+            lambda db: (lambda n: f"{n} order baru diimpor dari Google Sheet" if n else 0)(sync_enabled_sheets(db)),
+        )))
+
     try:
         yield
     finally:
-        if task:
-            task.cancel()
+        for t in tasks:
+            t.cancel()
 
 
 app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
@@ -422,15 +436,15 @@ def delete_channel(channel_id: UUID, db: Session = Depends(get_db)):
     return None
 
 
-@app.post("/api/v1/channels/{channel_id}/sync", response_model=SyncResult, dependencies=[Depends(require_admin)])
-def sync_channel(channel_id: UUID, db: Session = Depends(get_db)):
-    repo = SqlAlchemyChannelRepository(db)
-    ch = repo.get(channel_id)
-    if not ch:
-        raise HTTPException(status_code=404, detail="Channel not found")
-    if ch.type != ChannelType.GOOGLE_SHEET:
-        raise HTTPException(status_code=400, detail="Sync hanya untuk channel google_sheet")
+def sync_google_sheet(db: Session, ch: Channel) -> dict:
+    """Impor order dari Google Sheet yang dipublikasikan sebagai CSV.
 
+    `order_ref` WAJIB pada setiap baris. Itulah satu-satunya penanda yang membuat
+    baris dikenali sebagai order yang sama saat sync berikutnya. Tanpa itu, sync
+    berkala akan membuat order baru dari baris yang sama pada SETIAP siklus —
+    artinya barang terkirim berulang ke pembeli yang sama.
+    """
+    repo = SqlAlchemyChannelRepository(db)
     url = (ch.config or {}).get("csv_url", "").strip()
     if not url:
         return {"imported": 0, "skipped": 0, "errors": ["csv_url belum diisi di config"]}
@@ -458,25 +472,59 @@ def sync_channel(channel_id: UUID, db: Session = Depends(get_db)):
             count = max(1, int(row.get("count") or row.get("qty") or "1"))
         except ValueError:
             count = 1
+
         if not (recipient and category and item_key):
-            continue
-        if ref and ref in imported_refs:
+            continue  # baris kosong / belum lengkap — diamkan
+
+        if not ref:
+            errors.append(f"baris {i}: order_ref kosong — dilewati agar tidak terkirim berulang")
             skipped += 1
             continue
+
+        if ref in imported_refs:
+            skipped += 1
+            continue
+
         try:
-            order = Order(uuid4(), recipient, [OrderItem(category, item_key, count)], note=f"gsheet:{ref}" if ref else "gsheet")
+            order = Order(uuid4(), recipient.strip(), [OrderItem(category, item_key, count)],
+                          note=f"gsheet:{ref}")
             orders.create(order)
             imported += 1
-            if ref:
-                new_refs.append(ref)
+            new_refs.append(ref)
+            imported_refs.add(ref)  # cegah duplikat dalam satu file yang sama
         except Exception as e:  # noqa: BLE001
             errors.append(f"baris {i}: {e}")
 
-    ch.config = {**ch.config, "imported_refs": list(imported_refs) + new_refs}
+    ch.config = {**ch.config, "imported_refs": sorted(imported_refs)}
     ch.last_synced_at = datetime.now(timezone.utc)
     ch.status = ChannelStatus.CONNECTED
     repo.save(ch)
     return {"imported": imported, "skipped": skipped, "errors": errors}
+
+
+def sync_enabled_sheets(db: Session) -> int:
+    """Sync semua channel Google Sheet yang aktif. Dipakai penjadwal."""
+    total = 0
+    for ch in SqlAlchemyChannelRepository(db).list():
+        if ch.type != ChannelType.GOOGLE_SHEET or not ch.enabled:
+            continue
+        if not (ch.config or {}).get("csv_url", "").strip():
+            continue
+        result = sync_google_sheet(db, ch)
+        total += result["imported"]
+        if result["errors"]:
+            print(f"[sheet-sync] {ch.name}: {result['errors'][:3]}")
+    return total
+
+
+@app.post("/api/v1/channels/{channel_id}/sync", response_model=SyncResult, dependencies=[Depends(require_admin)])
+def sync_channel(channel_id: UUID, db: Session = Depends(get_db)):
+    ch = SqlAlchemyChannelRepository(db).get(channel_id)
+    if not ch:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if ch.type != ChannelType.GOOGLE_SHEET:
+        raise HTTPException(status_code=400, detail="Sync hanya untuk channel google_sheet")
+    return sync_google_sheet(db, ch)
 
 
 # ============================ LOADER (untuk loadstring(game:HttpGet(...))()) ============================

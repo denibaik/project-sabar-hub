@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     # 0 = matikan sweeper.
     order_stale_seconds: int = 900       # 15 menit
     sweeper_interval_seconds: int = 60
+    # Auto-sync Google Sheet: tarik order baru dari sheet tiap sekian detik.
+    # 0 = matikan (sync hanya lewat tombol di dashboard).
+    sheet_sync_interval_seconds: int = 120
     # Rate limit per IP per menit (0 = matikan). Hitungan per-proses uvicorn.
     rate_limit_public: int = 120   # /health, /files/*
     rate_limit_bot: int = 600      # heartbeat + claim + result (bot polling tiap 5 dtk)

@@ -96,10 +96,19 @@ export default function GoogleSheetPage() {
             <span className="text-xs text-slate-500">
               <b>recipient</b> = username Roblox pembeli · <b>category</b>/<b>item_key</b> harus persis
               seperti katalog game (mis. <code className="rounded bg-white/[0.06] px-1">Seeds</code> /
-              <code className="rounded bg-white/[0.06] px-1">Strawberry</code>) · <b>order_ref</b> = ID unik
-              tiap baris, dipakai agar tidak terimpor dua kali.
+              <code className="rounded bg-white/[0.06] px-1">Strawberry</code>)
             </span>
           </Step>
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.06] p-3">
+            <p className="text-xs font-medium text-amber-200">order_ref wajib diisi, dan harus unik</p>
+            <p className="mt-1 text-xs text-slate-400">
+              Itulah penanda yang membuat sebuah baris dikenali sebagai order yang sama pada sync
+              berikutnya. Baris tanpa <code className="rounded bg-white/[0.06] px-1">order_ref</code> akan
+              <b> dilewati</b> — kalau tidak, sync otomatis membuat order baru dari baris yang sama pada
+              setiap siklus, dan barang terkirim berulang ke pembeli yang sama.
+            </p>
+            <p className="mt-1 text-xs text-slate-500">Contoh isi: nomor order marketplace, atau <code className="rounded bg-white/[0.06] px-1">ORD-001</code>, <code className="rounded bg-white/[0.06] px-1">ORD-002</code>, dst.</p>
+          </div>
         </CardContent>
       </Card>
 
@@ -136,9 +145,20 @@ export default function GoogleSheetPage() {
           </div>
 
           {channel && (
-            <p className="text-xs text-slate-600">
-              Terakhir sync: {channel.last_synced_at ? relativeTime(channel.last_synced_at) : "belum pernah"}
-            </p>
+            <div className="space-y-1">
+              <p className="text-xs text-slate-600">
+                Terakhir sync: {channel.last_synced_at ? relativeTime(channel.last_synced_at) : "belum pernah"}
+              </p>
+              {channel.enabled ? (
+                <p className="text-xs text-emerald-400/80">
+                  Sync otomatis aktif — sheet ditarik berkala, tombol di atas untuk menarik sekarang juga.
+                </p>
+              ) : (
+                <p className="text-xs text-amber-400/80">
+                  Sync otomatis belum aktif. Klik &quot;Simpan URL&quot; untuk mengaktifkannya.
+                </p>
+              )}
+            </div>
           )}
           {loading && <p className="text-xs text-slate-600">memuat…</p>}
         </CardContent>
