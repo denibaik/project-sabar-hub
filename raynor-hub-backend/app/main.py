@@ -358,6 +358,18 @@ async def u7buy_webhook(request: Request, db: Session = Depends(get_db)):
     raw = (await request.body()).decode("utf-8", errors="replace")
     received_sig = request.headers.get(settings.u7buy_signature_header)
 
+    # Tombol "Check" di portal seller U7Buy mengirim POST KOSONG tanpa tanda
+    # tangan, hanya untuk menguji apakah URL-nya hidup, dan menunggu 200.
+    # Menolaknya membuat portal melaporkan "faulty" sehingga webhook tak bisa
+    # disimpan sama sekali.
+    #
+    # Membalas OK di sini tidak melemahkan apa pun: tidak ada yang dicatat dan
+    # tidak ada keadaan yang berubah. Webhook sungguhan selalu berisi JSON, dan
+    # jalur itu tetap wajib bertanda tangan sah.
+    if not raw.strip():
+        print("[u7buy] uji koneksi (body kosong) — dibalas OK, tidak dicatat")
+        return {"status": "OK"}
+
     if settings.u7buy_verify_signature:
         if not verify_u7buy(settings.u7buy_app_id, settings.u7buy_app_secret, raw, received_sig):
             # Dokumentasi U7Buy tidak memuat contoh tanda tangan; log kandidat

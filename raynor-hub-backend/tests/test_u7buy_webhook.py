@@ -101,3 +101,30 @@ def test_capture_rejects_wrong_token_and_stores_correct_one():
         assert "Order baru masuk" in full["payload"]
     finally:
         s.capture_webhook_token = old
+
+
+def test_uji_koneksi_body_kosong_dibalas_ok():
+    """Tombol "Check" di portal U7Buy: POST kosong, tanpa tanda tangan.
+
+    Ditolak = portal melaporkan "faulty" dan webhook tak bisa disimpan.
+    """
+    r = client.post("/api/v1/webhooks/u7buy", content=b"",
+                    headers={"Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"})
+    assert r.status_code == 200
+    assert r.json() == {"status": "OK"}
+
+
+def test_uji_koneksi_tidak_mencatat_event():
+    """Kalau tercatat, daftar notifikasi akan penuh sampah tiap tombol ditekan."""
+    sebelum = client.get("/api/v1/webhooks/events", headers=ADMIN).json()["total"]
+    client.post("/api/v1/webhooks/u7buy", content=b"")
+    client.post("/api/v1/webhooks/u7buy", content=b"   ")
+    sesudah = client.get("/api/v1/webhooks/events", headers=ADMIN).json()["total"]
+    assert sesudah == sebelum
+
+
+def test_webhook_berisi_tetap_wajib_bertanda_tangan():
+    """Kelonggaran di atas hanya untuk body kosong, bukan untuk yang lain."""
+    r = client.post("/api/v1/webhooks/u7buy",
+                    content=b'{"event":"new_order_received","data":{"orderId":"1"}}')
+    assert r.status_code == 401

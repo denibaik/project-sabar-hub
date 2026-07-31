@@ -223,10 +223,35 @@ mati, **tidak ada satu pun permintaan keluar** yang dikirim.
 
 ---
 
+## Tombol "Check" di portal seller
+
+Tombol itu **bukan** webhook bertanda tangan. Yang dikirim (terekam dari log):
+
+```
+POST /api/v1/webhooks/u7buy
+content-length: 0
+content-type: application/x-www-form-urlencoded;charset=UTF-8
+user-agent: ... Hutool
+(tidak ada header tanda tangan sama sekali)
+```
+
+Body kosong, tanpa tanda tangan — sekadar menguji apakah URL-nya hidup. Menolaknya
+membuat portal melaporkan **"faulty"** sehingga webhook tidak bisa disimpan.
+
+Mematikan `U7BUY_VERIFY_SIGNATURE` **tidak** menolong di sini: body kosong bukan
+JSON, jadi hasilnya `400`, tetap gagal. Karena itu POST berbadan kosong dibalas
+`{"status":"OK"}` sebagai jalur tersendiri — tanpa mencatat apa pun dan tanpa
+mengubah keadaan. Webhook sungguhan selalu berisi JSON dan tetap wajib
+bertanda tangan sah.
+
+---
+
 ## Dua hal yang belum pasti dari dokumentasi
 
-**1. Nama header tanda tangan.** Dokumentasi U7Buy tidak menyebutkannya. Default
-kita `x-signature`, bisa diubah lewat `U7BUY_SIGNATURE_HEADER`.
+**1. Nama header tanda tangan.** Dokumentasi U7Buy tidak menyebutkannya, dan uji
+koneksi tidak mengirim satu pun header tanda tangan — jadi namanya baru akan
+ketahuan saat webhook order sungguhan pertama tiba. Default kita `x-signature`,
+bisa diubah lewat `U7BUY_SIGNATURE_HEADER`.
 
 **2. String yang ditandatangani.** Dokumentasi hanya menulis "sambungkan App ID
 dan parameter request dengan ','" tanpa contoh. Implementasi kita mencoba tiga
