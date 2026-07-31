@@ -39,9 +39,30 @@ export default function GoogleSheetPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Ambil ulang channel tanpa menyentuh pesan error atau URL yang sedang diketik.
+  // Dipakai setelah kegagalan: kalau channel-nya ternyata sudah tidak ada di
+  // server, halaman harus berhenti menampilkannya sebagai "Terhubung" — kalau
+  // tidak, tombol Connect tak pernah muncul dan tak ada jalan keluar selain
+  // me-reload halaman.
+  const resync = useCallback(async () => {
+    try {
+      const list = await backend.listChannels()
+      setChannel(list.find((c) => c.type === "google_sheet") ?? null)
+    } catch {
+      /* biarkan — error aslinya yang lebih berguna untuk ditampilkan */
+    }
+  }, [])
+
   async function run(label: string, fn: () => Promise<void>) {
     setBusy(label); setErr(null)
-    try { await fn() } catch (e) { setErr((e as Error).message) } finally { setBusy(null) }
+    try {
+      await fn()
+    } catch (e) {
+      setErr((e as Error).message)
+      await resync()
+    } finally {
+      setBusy(null)
+    }
   }
 
   const connect = () => run("connect", async () => {
