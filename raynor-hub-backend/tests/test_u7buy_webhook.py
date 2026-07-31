@@ -64,3 +64,40 @@ def test_signature_helper_accepts_documented_construction():
     assert verify(APP_ID, SECRET, raw, None) is False
     # kandidat dipaparkan untuk mencocokkan format saat webhook asli masuk
     assert "raw" in candidate_signatures(APP_ID, SECRET, raw)
+
+
+# ---------- penangkap webhook generik ----------
+
+def test_capture_is_off_when_token_unset():
+    """Tanpa CAPTURE_WEBHOOK_TOKEN, endpoint tidak boleh ada sama sekali."""
+    from app.core.config import settings as s
+    old = s.capture_webhook_token
+    s.capture_webhook_token = ""
+    try:
+        r = client.post("/api/v1/webhooks/capture/apapun/vcgamers", json={"x": 1})
+        assert r.status_code == 404
+    finally:
+        s.capture_webhook_token = old
+
+
+def test_capture_rejects_wrong_token_and_stores_correct_one():
+    from app.core.config import settings as s
+    old = s.capture_webhook_token
+    s.capture_webhook_token = "rahasia-capture"
+    try:
+        # token salah -> 404 (bukan 401, agar keberadaan endpoint tidak terungkap)
+        assert client.post("/api/v1/webhooks/capture/salah/vcgamers", json={"x": 1}).status_code == 404
+
+        # token benar -> diterima, apa pun bentuk payload-nya
+        payload = {"content": "Order baru masuk", "embeds": [{"title": "VCGamers"}]}
+        r = client.post("/api/v1/webhooks/capture/rahasia-capture/vcgamers", json=payload)
+        assert r.status_code == 204, r.text
+
+        events = client.get("/api/v1/webhooks/events", headers=ADMIN).json()["items"]
+        mine = [e for e in events if e["source"] == "vcgamers"]
+        assert mine, "payload harus tersimpan"
+
+        full = client.get(f"/api/v1/webhooks/events/{mine[0]['id']}", headers=ADMIN).json()
+        assert "Order baru masuk" in full["payload"]
+    finally:
+        s.capture_webhook_token = old

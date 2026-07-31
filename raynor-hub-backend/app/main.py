@@ -29,6 +29,7 @@ from app.api.v1.schemas.channels import (
     CreateChannelRequest, UpdateChannelRequest, ChannelResponse, ChannelListResponse, SyncResult,
 )
 import asyncio
+import hmac
 import json
 from contextlib import asynccontextmanager
 import csv as _csv
@@ -247,6 +248,50 @@ async def u7buy_webhook(request: Request, db: Session = Depends(get_db)):
 
     # Format balasan yang diminta U7Buy
     return {"status": "OK"}
+
+
+@app.post("/api/v1/webhooks/capture/{token}/{label}")
+async def capture_webhook(token: str, label: str, request: Request, db: Session = Depends(get_db)):
+    """Tampung payload webhook apa pun, untuk mengetahui bentuk aslinya.
+
+    Dipakai saat menyambungkan pengirim yang formatnya belum diketahui — misalnya
+    fitur "notifikasi ke Discord" milik marketplace: URL-nya diarahkan ke sini,
+    lalu payload yang masuk bisa diperiksa di dashboard.
+
+    Pengirim seperti webhook Discord tidak dapat mengirim header khusus, sehingga
+    `token` di URL adalah satu-satunya pengaman. Perlakukan URL ini seperti kata
+    sandi, dan matikan (`CAPTURE_WEBHOOK_TOKEN` kosong) bila tidak dipakai.
+    """
+    if not settings.capture_webhook_token:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not hmac.compare_digest(token, settings.capture_webhook_token):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    safe_label = "".join(c for c in label if c.isalnum() or c in "-_")[:30] or "capture"
+
+    repo = SqlAlchemyWebhookRepository(db)
+    # tiap kiriman disimpan terpisah — di tahap ini kita justru ingin melihat semuanya
+    dedupe = f"{safe_label}:{datetime.now(timezone.utc).timestamp()}"
+    repo.record(safe_label, "captured", dedupe, raw[:20000])
+    print(f"[capture:{safe_label}] {len(raw)} byte diterima")
+
+    # Discord membalas 204 tanpa isi; sebagian pengirim mengharap 2xx apa pun
+    return Response(status_code=204)
+
+
+@app.get("/api/v1/webhooks/events/{event_id}", dependencies=[Depends(require_admin)])
+def get_webhook_event(event_id: UUID, db: Session = Depends(get_db)):
+    """Isi lengkap satu event — untuk memeriksa payload yang tertangkap."""
+    from app.infrastructure.database.models.webhook_event import WebhookEventModel
+    row = db.get(WebhookEventModel, event_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {
+        "id": str(row.id), "source": row.source, "event": row.event,
+        "status": row.status, "received_at": row.received_at,
+        "payload": row.payload,
+    }
 
 
 @app.get("/api/v1/webhooks/events", dependencies=[Depends(require_admin)])

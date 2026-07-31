@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     # false = terima webhook tanpa verifikasi (HANYA untuk mencocokkan format
     # tanda tangan saat integrasi awal; jangan dibiarkan false di produksi).
     u7buy_verify_signature: bool = True
+
+    # --- Penangkap webhook generik (mis. notifikasi Discord dari VCGamers) ---
+    # Rahasia ini menjadi bagian URL. Pengirim seperti webhook Discord tidak bisa
+    # mengirim header khusus, jadi URL-lah satu-satunya pengaman. Kosong = matikan.
+    capture_webhook_token: str = ""
     # daftar origin dashboard, dipisah koma. Di VPS isi dgn domain asli.
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
