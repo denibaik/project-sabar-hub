@@ -18,6 +18,7 @@ from app.infrastructure.repositories.sqlalchemy_webhook_repository import SqlAlc
 from app.infrastructure.security.rate_limit import limiter
 from app.infrastructure.security.u7buy_signature import verify as verify_u7buy, debug_candidates as debug_u7buy
 from app.infrastructure.marketplaces.u7buy_client import U7BuyClient, U7BuyError
+from app.infrastructure.marketplaces.u7buy_catalog import suggest as u7buy_suggest
 from app.infrastructure.security.token_hasher import generate_token, hash_token, verify_token, token_prefix
 from app.api.v1.schemas.bots import BotHeartbeatRequest, BotListResponse, BotResponse, RegisterBotRequest, RegisterBotResponse
 from app.api.v1.schemas.orders import (
@@ -848,6 +849,51 @@ def process_u7buy_events(db: Session) -> int:
         repo.mark(row, "processed", None)
 
     return dibuat
+
+
+@app.get("/api/v1/u7buy/offers", dependencies=[Depends(require_admin)])
+def list_u7buy_offers(db: Session = Depends(get_db)):
+    """Listing U7Buy beserta usulan pemetaannya.
+
+    Sumbernya katalog listing, bukan riwayat order: listing yang belum pernah
+    laku justru yang paling berbahaya bila belum dipetakan, karena order
+    pertamanya langsung gagal.
+
+    Usulan kategori dibiarkan kosong bila tak dapat ditentukan — biar diisi
+    manusia, bukan ditebak.
+    """
+    if not (settings.u7buy_app_id and settings.u7buy_app_secret):
+        raise HTTPException(status_code=400,
+                            detail="U7BUY_APP_ID / U7BUY_APP_SECRET belum diisi di .env")
+
+    klien = u7buy_client()
+    try:
+        business_id = klien.find_business_id()
+        if not business_id:
+            raise HTTPException(status_code=502,
+                                detail="businessId tak ditemukan — akun ini belum punya order")
+        offers = klien.all_offers(business_id)
+    except U7BuyError as e:
+        raise HTTPException(status_code=502, detail=f"U7Buy: {e}")
+
+    sudah = u7buy_product_map(db)
+    items, lain = [], 0
+    for o in offers:
+        if settings.u7buy_game_name and o.get("entityName") != settings.u7buy_game_name:
+            lain += 1
+            continue
+        nama = o.get("offerName") or ""
+        items.append({
+            "product_id": str(o.get("offerId") or ""),
+            "name": nama,
+            "stock": o.get("inventory"),
+            "sold": o.get("saleNum"),
+            "on_sale": bool(o.get("onSale")),
+            "already_mapped": str(o.get("offerId") or "") in sudah,
+            **u7buy_suggest(nama),
+        })
+    return {"items": items, "total": len(items),
+            "game": settings.u7buy_game_name, "skipped_other_games": lain}
 
 
 def notify_u7buy_complete(order: Order) -> None:

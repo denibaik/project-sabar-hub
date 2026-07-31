@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Plug, Plus, RefreshCw, Save, Store, Trash2 } from "lucide-react"
+import { Download, Plug, Plus, RefreshCw, Save, Store, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -109,6 +109,38 @@ export default function U7BuyPage() {
     await load()
   })
 
+  // Tarik katalog listing dari U7Buy dan tambahkan yang belum ada.
+  //
+  // Baris yang sudah kamu isi TIDAK disentuh: usulan otomatis hanya menebak dari
+  // nama listing, sedangkan isian manualmu bisa jadi hasil pemeriksaan ke
+  // katalog game. Menimpanya akan menghapus pekerjaan yang lebih tepat.
+  const tarik = () => run("fetch", async () => {
+    const offers = await backend.listU7BuyOffers()
+    let ditambah = 0
+    setBaris((lama) => {
+      const ada = new Set(lama.map((b) => b.productId.trim()))
+      const baru = offers
+        .filter((o) => !ada.has(o.product_id))
+        .map((o) => {
+          ditambah++
+          return {
+            productId: o.product_id,
+            category: o.category,
+            item_key: o.item_key,
+            per_unit: o.per_unit,
+            _produk: `${o.name} · stok ${o.stock ?? "?"}${o.on_sale ? "" : " · nonaktif"}`,
+          }
+        })
+      return [...lama, ...baru]
+    })
+    const perlu = offers.filter((o) => !o.category).length
+    setPesan(
+      `${offers.length} listing ditemukan, ${ditambah} ditambahkan.` +
+      (perlu ? ` ${perlu} belum bisa ditebak kategorinya — isi sendiri sebelum menyimpan.` : "") +
+      " Belum tersimpan sampai kamu menekan Simpan."
+    )
+  })
+
   const ubah = (i: number, patch: Partial<Baris>) =>
     setBaris((b) => b.map((r, j) => (j === i ? { ...r, ...patch } : r)))
 
@@ -164,9 +196,8 @@ export default function U7BuyPage() {
 
               {baris.length === 0 && (
                 <p className="rounded-lg border border-white/5 bg-white/[0.02] px-3 py-4 text-center text-xs text-slate-500">
-                  Belum ada produk. Tambahkan baris, atau jalankan{" "}
-                  <code className="text-slate-400">scripts/u7buy_products.py</code> untuk melihat
-                  produk yang pernah terjual.
+                  Belum ada produk. Tekan <span className="text-slate-400">Tarik dari U7Buy</span>{" "}
+                  di bawah untuk mengambil seluruh listing-mu beserta usulan pemetaannya.
                 </p>
               )}
 
@@ -196,6 +227,11 @@ export default function U7BuyPage() {
               ))}
 
               <div className="flex flex-wrap items-center gap-2 pt-1">
+                <Button onClick={tarik} disabled={busy !== null}
+                  variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+                  <Download className={`mr-2 h-4 w-4 ${busy === "fetch" ? "animate-pulse" : ""}`} />
+                  {busy === "fetch" ? "Menarik…" : "Tarik dari U7Buy"}
+                </Button>
                 <Button onClick={() => setBaris((b) => [...b, { ...BARIS_KOSONG }])}
                   variant="outline" className="border-white/10 bg-white/[0.03] text-slate-300">
                   <Plus className="mr-2 h-4 w-4" />Tambah produk

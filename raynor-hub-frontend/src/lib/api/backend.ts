@@ -87,6 +87,20 @@ export interface U7BuyProduct {
   _produk?: string
 }
 
+/** Satu listing di U7Buy, dengan usulan pemetaannya. */
+export interface U7BuyOffer {
+  product_id: string
+  name: string
+  stock: number | null
+  sold: number | null
+  on_sale: boolean
+  already_mapped: boolean
+  /** kosong bila tak dapat ditentukan — harus diisi manusia, bukan ditebak */
+  category: string
+  item_key: string
+  per_unit: number
+}
+
 export interface SyncResult {
   imported: number
   skipped: number
@@ -189,6 +203,12 @@ export const backend = {
   async syncChannel(id: string): Promise<SyncResult> {
     const r = await fetch(`${API_BASE}/api/v1/channels/${id}/sync`, { method: "POST" })
     return unwrap<SyncResult>(r)
+  },
+
+  async listU7BuyOffers(): Promise<U7BuyOffer[]> {
+    const r = await fetch(`${API_BASE}/api/v1/u7buy/offers`, { cache: "no-store" })
+    const d = await unwrap<{ items: U7BuyOffer[]; total: number }>(r)
+    return d.items
   },
 
   async listWebhookEvents(): Promise<WebhookEvent[]> {

@@ -75,6 +75,36 @@ class U7BuyClient:
         # Ukuran halaman terkunci 10 di sisi U7Buy; parameter ukuran diabaikan.
         return self._call("/open-api/order/list", {"pageNum": page})
 
+    def find_business_id(self) -> str:
+        """`businessId` diambil dari satu order mana pun — endpoint offer
+        mewajibkannya, dan nilainya tidak muncul di tempat lain."""
+        for r in (self.list_orders(1).get("rows") or []):
+            if r.get("businessId"):
+                return str(r["businessId"])
+        return ""
+
+    def list_offers(self, business_id: str, page: int = 1, page_size: int = 50) -> dict:
+        """Katalog listing penjual.
+
+        Berbeda dari riwayat order, di sini `pageSize` DIHORMATI. Kuncinya juga
+        berbeda: `totalCount` + `pageResult`, bukan `total` + `rows`.
+        """
+        return self._call("/open-api/offer_common/list", {
+            "pageNum": page, "pageSize": page_size, "businessId": business_id,
+        })
+
+    def all_offers(self, business_id: str, max_pages: int = 20) -> list[dict]:
+        keluar: list[dict] = []
+        for halaman in range(1, max_pages + 1):
+            data = self.list_offers(business_id, halaman)
+            baris = data.get("pageResult") or []
+            if not baris:
+                break
+            keluar.extend(baris)
+            if len(keluar) >= int(data.get("totalCount") or 0):
+                break
+        return keluar
+
     def get_buyer_username(self, order_id: str) -> str | None:
         """Username Roblox pembeli, dari parameter pengiriman.
 

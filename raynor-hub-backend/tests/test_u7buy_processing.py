@@ -286,3 +286,30 @@ def test_kode_galat_dalam_body_dianggap_gagal():
     klien = U7BuyClient("id", "secret", "https://contoh.invalid", opener=opener)
     with pytest.raises(U7BuyError):
         klien.get_order("1")
+
+
+# ---- usulan pemetaan dari nama listing ----
+
+from app.infrastructure.marketplaces.u7buy_catalog import suggest  # noqa: E402
+
+
+def test_jumlah_per_unit_dibaca_dari_judul_listing():
+    assert suggest("150x Trowel | Grow A Garden 2 | Instant Delivery") == {
+        "category": "Trowels", "item_key": "Trowel", "per_unit": 150,
+    }
+
+
+def test_kata_seed_di_belakang_dibuang():
+    """Katalog game menyimpan "Ghost Pepper"; Seeds adalah kategori bernama ketat,
+    sehingga "Ghost Pepper Seed" benar-benar ditolak saat dikirim."""
+    assert suggest("Ghost Pepper Seed | Grow A Garden 2")["item_key"] == "Ghost Pepper"
+    assert suggest("Ghost Pepper Seed | Grow A Garden 2")["category"] == "Seeds"
+
+
+def test_seed_pack_tidak_jatuh_ke_seeds():
+    assert suggest("Secret Seed Pack | Grow A Garden 2")["category"] == "SeedPacks"
+
+
+def test_kategori_yang_tak_bisa_ditentukan_dibiarkan_kosong():
+    """Pet tidak punya kata kunci di namanya — lebih baik kosong daripada salah."""
+    assert suggest("Unicorn | Grow A Garden 2 | Instant Delivery")["category"] == ""

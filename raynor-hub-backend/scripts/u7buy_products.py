@@ -43,6 +43,10 @@ except Exception:  # noqa: BLE001
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import settings  # noqa: E402
+from app.infrastructure.marketplaces.u7buy_catalog import (  # noqa: E402
+    parse_offer_name as urai_nama, guess_category as tebak_kategori,
+    clean_item_key as bersihkan_item,
+)
 
 
 def call(path: str, params: dict | None = None):
@@ -63,42 +67,6 @@ def call(path: str, params: dict | None = None):
         return e.code, {"_raw": e.read().decode("utf-8", errors="replace")[:300]}
     except Exception as e:  # noqa: BLE001
         return 0, {"_error": str(e)}
-
-
-def urai_nama(nama: str) -> tuple[str, int]:
-    """"150x Trowel | Grow A Garden 2 | ..." -> ("Trowel", 150)."""
-    inti = nama.split("|")[0].strip()
-    m = re.match(r"^(\d+)\s*x\s+(.*)$", inti, re.IGNORECASE)
-    if m:
-        return m.group(2).strip(), int(m.group(1))
-    return inti, 1
-
-
-# Kategori ditebak dari kata kunci pada nama. Sengaja konservatif: yang tidak
-# yakin dibiarkan kosong agar diisi manusia, bukan ditebak asal.
-PETUNJUK = [
-    (r"\bsprinkler\b", "Sprinklers"),
-    (r"\bwatering can\b", "WateringCans"),
-    (r"\btrowel\b", "Trowels"),
-    (r"\bseed pack\b", "SeedPacks"),
-    (r"\braccoon\b", "Raccoons"),
-    (r"\bseed\b", "Seeds"),
-]
-
-
-def tebak_kategori(nama: str) -> str:
-    rendah = nama.lower()
-    for pola, kategori in PETUNJUK:
-        if re.search(pola, rendah):
-            return kategori
-    return ""
-
-
-def bersihkan_item(nama: str, kategori: str) -> str:
-    """Buang kata jenis di belakang; backend memakluminya, tapi lebih rapi begini."""
-    if kategori in ("Seeds", "Pets"):
-        return re.sub(r"\s*\b(seeds?|pets?)\b\s*$", "", nama, flags=re.IGNORECASE).strip()
-    return nama
 
 
 def temukan_business_id() -> str:
