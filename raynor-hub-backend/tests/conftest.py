@@ -13,6 +13,8 @@ TEST_DB = pathlib.Path("data/sqlite/test_sabar_hub.db")
 os.environ.setdefault("DATABASE_URL", f"sqlite:///./{TEST_DB.as_posix()}")
 os.environ.setdefault("BOT_REGISTRATION_KEY", "test-registration-key")
 os.environ.setdefault("ADMIN_API_KEY", "test-admin-key")
+os.environ.setdefault("U7BUY_APP_ID", "test-app-id")
+os.environ.setdefault("U7BUY_APP_SECRET", "test-app-secret")
 
 TEST_DB.parent.mkdir(parents=True, exist_ok=True)
 if TEST_DB.exists():

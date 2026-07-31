@@ -14,7 +14,9 @@ from app.infrastructure.repositories.sqlalchemy_bot_repository import SqlAlchemy
 from app.infrastructure.repositories.sqlalchemy_order_repository import (
     SqlAlchemyOrderRepository, SqlAlchemyBotInventoryRepository,
 )
+from app.infrastructure.repositories.sqlalchemy_webhook_repository import SqlAlchemyWebhookRepository
 from app.infrastructure.security.rate_limit import limiter
+from app.infrastructure.security.u7buy_signature import verify as verify_u7buy, debug_candidates as debug_u7buy
 from app.infrastructure.security.token_hasher import generate_token, hash_token, verify_token, token_prefix
 from app.api.v1.schemas.bots import BotHeartbeatRequest, BotListResponse, BotResponse, RegisterBotRequest, RegisterBotResponse
 from app.api.v1.schemas.orders import (
@@ -27,6 +29,7 @@ from app.api.v1.schemas.channels import (
     CreateChannelRequest, UpdateChannelRequest, ChannelResponse, ChannelListResponse, SyncResult,
 )
 import asyncio
+import json
 from contextlib import asynccontextmanager
 import csv as _csv
 import io as _io
@@ -186,6 +189,67 @@ def health(): return {"status": "ok", "service": settings.app_name}
 def sweep_now(db: Session = Depends(get_db)):
     """Jalankan sweeper manual — berguna untuk membersihkan order nyangkut."""
     return {"swept": sweep_stale_orders(db)}
+
+
+# ============================ WEBHOOK U7BUY ============================
+
+@app.post("/api/v1/webhooks/u7buy")
+async def u7buy_webhook(request: Request, db: Session = Depends(get_db)):
+    """Terima notifikasi U7Buy.
+
+    U7Buy menunggu balasan maksimal 5 detik dan mengulang sampai 5×. Jadi di sini
+    kita hanya memverifikasi tanda tangan lalu menyimpan event, dan langsung
+    membalas. Pemrosesan (ambil detail order, buat order) menyusul terpisah.
+    """
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    received_sig = request.headers.get(settings.u7buy_signature_header)
+
+    if settings.u7buy_verify_signature:
+        if not verify_u7buy(settings.u7buy_app_id, settings.u7buy_app_secret, raw, received_sig):
+            # Dokumentasi U7Buy tidak memuat contoh tanda tangan; log kandidat
+            # agar formatnya bisa dicocokkan saat webhook asli pertama masuk.
+            print(f"[u7buy] tanda tangan tidak cocok. header={settings.u7buy_signature_header!r} "
+                  f"diterima={received_sig!r} semua_header={dict(request.headers)}")
+            print(f"[u7buy] kandidat={debug_u7buy(settings.u7buy_app_id, settings.u7buy_app_secret, raw)}")
+            raise HTTPException(status_code=401, detail="Invalid signature")
+    else:
+        print("[u7buy] ⚠ verifikasi tanda tangan DIMATIKAN — jangan dipakai di produksi")
+
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Body bukan JSON")
+
+    event = str(body.get("event") or "unknown")
+    data = body.get("data") or {}
+    ref = data.get("orderId") or data.get("offerId") or body.get("timestamp") or ""
+    dedupe_key = f"{event}:{ref}"
+
+    row, is_new = SqlAlchemyWebhookRepository(db).record("u7buy", event, dedupe_key, raw)
+    if is_new:
+        print(f"[u7buy] event diterima: {dedupe_key}")
+    else:
+        print(f"[u7buy] event berulang, diabaikan: {dedupe_key}")
+
+    # Format balasan yang diminta U7Buy
+    return {"status": "OK"}
+
+
+@app.get("/api/v1/webhooks/events", dependencies=[Depends(require_admin)])
+def list_webhook_events(db: Session = Depends(get_db)):
+    """Riwayat webhook — untuk memantau & mendiagnosis integrasi."""
+    rows = SqlAlchemyWebhookRepository(db).recent()
+    return {
+        "items": [
+            {
+                "id": str(r.id), "source": r.source, "event": r.event,
+                "dedupe_key": r.dedupe_key, "status": r.status, "error": r.error,
+                "received_at": r.received_at, "processed_at": r.processed_at,
+            }
+            for r in rows
+        ],
+        "total": len(rows),
+    }
 
 @app.post("/api/v1/bots", response_model=RegisterBotResponse, status_code=201, dependencies=[Depends(require_registration_key)])
 def register_bot(payload: RegisterBotRequest, db: Session = Depends(get_db)):

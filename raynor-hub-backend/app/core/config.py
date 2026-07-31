@@ -16,6 +16,17 @@ class Settings(BaseSettings):
     rate_limit_public: int = 120   # /health, /files/*
     rate_limit_bot: int = 600      # heartbeat + claim + result (bot polling tiap 5 dtk)
     rate_limit_admin: int = 600    # dashboard polling 3 endpoint tiap 3 dtk
+
+    # --- U7Buy ---
+    u7buy_app_id: str = ""
+    u7buy_app_secret: str = ""
+    u7buy_base_url: str = "https://openapi.u7buy.com/prod-api"
+    # Dokumentasi U7Buy tidak menyebut nama header tanda tangan. Set sesuai
+    # header yang benar-benar dikirim saat webhook pertama masuk.
+    u7buy_signature_header: str = "x-signature"
+    # false = terima webhook tanpa verifikasi (HANYA untuk mencocokkan format
+    # tanda tangan saat integrasi awal; jangan dibiarkan false di produksi).
+    u7buy_verify_signature: bool = True
     # daftar origin dashboard, dipisah koma. Di VPS isi dgn domain asli.
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
