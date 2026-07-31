@@ -2,13 +2,16 @@ import os
 from uuid import uuid4
 
 os.environ["DATABASE_URL"] = "sqlite:///./data/sqlite/test_sabar_hub.db"
+# Kunci khusus test — agar tidak bergantung pada .env milik developer
+os.environ["BOT_REGISTRATION_KEY"] = "test-registration-key"
+os.environ["ADMIN_API_KEY"] = "test-admin-key"
 
 from fastapi.testclient import TestClient
 from app.main import app
 
 client = TestClient(app)
-REG = {"X-Registration-Key": "dev-registration-key"}
-ADMIN = {"X-Admin-Key": "dev-admin-key"}
+REG = {"X-Registration-Key": "test-registration-key"}
+ADMIN = {"X-Admin-Key": "test-admin-key"}
 
 
 def _register(inventory=None):

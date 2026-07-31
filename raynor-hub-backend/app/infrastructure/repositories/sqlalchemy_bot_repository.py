@@ -9,9 +9,22 @@ class SqlAlchemyBotRepository:
     def __init__(self, db: Session): self.db = db
     def _to_entity(self, row: BotModel) -> Bot:
         return Bot(row.id, row.name, row.username, row.game, BotStatus(row.status), row.last_heartbeat_at, row.server, row.ping_ms)
-    def create(self, bot: Bot, token_hash: str) -> Bot:
-        self.db.add(BotModel(id=bot.id, name=bot.name, username=bot.username, game=bot.game, status=bot.status.value, token_hash=token_hash))
+    def create(self, bot: Bot, token_hash: str, token_prefix: str | None = None) -> Bot:
+        self.db.add(BotModel(id=bot.id, name=bot.name, username=bot.username, game=bot.game,
+                             status=bot.status.value, token_hash=token_hash, token_prefix=token_prefix))
         self.db.commit(); return bot
+    def find_by_prefix(self, prefix: str):
+        """Jalur cepat: baris yang prefix token-nya cocok (biasanya tepat satu)."""
+        rows = self.db.scalars(select(BotModel).where(BotModel.token_prefix == prefix)).all()
+        return [(self._to_entity(r), r.token_hash) for r in rows]
+    def legacy_candidates(self):
+        """Baris lama yang belum punya prefix — hanya ini yang perlu dipindai."""
+        rows = self.db.scalars(select(BotModel).where(BotModel.token_prefix.is_(None))).all()
+        return [(self._to_entity(r), r.token_hash) for r in rows]
+    def backfill_prefix(self, bot_id: UUID, prefix: str) -> None:
+        row = self.db.get(BotModel, bot_id)
+        if row and not row.token_prefix:
+            row.token_prefix = prefix; self.db.commit()
     def get(self, bot_id: UUID):
         row = self.db.get(BotModel, bot_id); return (self._to_entity(row), row.token_hash) if row else None
     def find_by_username(self, username: str) -> bool:

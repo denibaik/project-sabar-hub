@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.domain.bots.entities import Bot, BotStatus
 from app.domain.orders.entities import Order, OrderItem, OrderStatus
-from app.infrastructure.database.session import Base, engine, get_db
+from app.infrastructure.database.session import Base, engine, ensure_columns, get_db
 
 from app.infrastructure.repositories.sqlalchemy_bot_repository import SqlAlchemyBotRepository
 from app.infrastructure.repositories.sqlalchemy_order_repository import (
     SqlAlchemyOrderRepository, SqlAlchemyBotInventoryRepository,
 )
-from app.infrastructure.security.token_hasher import generate_token, hash_token, verify_token
+from app.infrastructure.security.token_hasher import generate_token, hash_token, verify_token, token_prefix
 from app.api.v1.schemas.bots import BotHeartbeatRequest, BotListResponse, BotResponse, RegisterBotRequest, RegisterBotResponse
 from app.api.v1.schemas.orders import (
     CreateOrderRequest, OrderResponse, OrderListResponse, ClaimRequest, ResultRequest,
@@ -30,6 +30,7 @@ import io as _io
 import urllib.request as _urlreq
 
 Base.metadata.create_all(bind=engine)
+ensure_columns()  # tambah kolom baru pada DB lama (sampai Alembic dipasang)
 app = FastAPI(title=settings.app_name, version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -53,10 +54,25 @@ def authenticate_bot(authorization: str | None = Header(default=None)):
     return authorization.removeprefix("Bearer ").strip()
 
 def resolve_bot(db: Session, token: str) -> Bot:
+    """Cari bot dari Bearer token.
+
+    Jalur cepat: cocokkan prefix ber-index, lalu argon2 sekali. Baris lama yang
+    belum punya prefix dipindai sebagai fallback dan langsung diisi prefix-nya,
+    sehingga setelah sekali auth ikut jalur cepat.
+    """
     repo = SqlAlchemyBotRepository(db)
-    match = next(((bot, stored) for bot, stored in repo.find_by_token_candidates() if verify_token(token, stored)), None)
-    if not match: raise HTTPException(status_code=401, detail="Invalid bot token")
-    return match[0]
+    prefix = token_prefix(token)
+
+    for bot, stored in repo.find_by_prefix(prefix):
+        if verify_token(token, stored):
+            return bot
+
+    for bot, stored in repo.legacy_candidates():
+        if verify_token(token, stored):
+            repo.backfill_prefix(bot.id, prefix)
+            return bot
+
+    raise HTTPException(status_code=401, detail="Invalid bot token")
 
 def _aware(dt):
     return dt.replace(tzinfo=timezone.utc) if (dt is not None and dt.tzinfo is None) else dt
@@ -88,15 +104,14 @@ def register_bot(payload: RegisterBotRequest, db: Session = Depends(get_db)):
     repo = SqlAlchemyBotRepository(db)
     if repo.find_by_username(payload.username): raise HTTPException(status_code=409, detail="Bot username already exists")
     token = generate_token(); bot = Bot(uuid4(), payload.name, payload.username, payload.game)
-    repo.create(bot, hash_token(token))
+    repo.create(bot, hash_token(token), token_prefix(token))
     return {"bot": response(bot), "token": token}
 
 @app.post("/api/v1/bots/heartbeat", response_model=BotResponse)
 def heartbeat(payload: BotHeartbeatRequest, token: str = Depends(authenticate_bot), db: Session = Depends(get_db)):
     repo = SqlAlchemyBotRepository(db)
-    match = next(((bot, stored) for bot, stored in repo.find_by_token_candidates() if verify_token(token, stored)), None)
-    if not match: raise HTTPException(status_code=401, detail="Invalid bot token")
-    bot, _ = match; bot.status = BotStatus.ONLINE; bot.last_heartbeat_at = datetime.now(timezone.utc); bot.server = payload.server; bot.ping_ms = payload.ping_ms
+    bot = resolve_bot(db, token)
+    bot.status = BotStatus.ONLINE; bot.last_heartbeat_at = datetime.now(timezone.utc); bot.server = payload.server; bot.ping_ms = payload.ping_ms
     if payload.inventory is not None:
         SqlAlchemyBotInventoryRepository(db).upsert(bot.id, payload.inventory, payload.names)
     return response(repo.save(bot))

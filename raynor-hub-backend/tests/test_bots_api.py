@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 
 os.environ["DATABASE_URL"] = "sqlite:///./data/sqlite/test_sabar_hub.db"
+# Kunci khusus test — agar tidak bergantung pada .env milik developer
+os.environ["BOT_REGISTRATION_KEY"] = "test-registration-key"
+os.environ["ADMIN_API_KEY"] = "test-admin-key"
 
 from fastapi.testclient import TestClient
 from app.main import app
@@ -12,7 +15,7 @@ def test_register_heartbeat_and_list_bots():
     username = "TestBot_API_001"
     registration = client.post(
         "/api/v1/bots",
-        headers={"X-Registration-Key": "dev-registration-key"},
+        headers={"X-Registration-Key": "test-registration-key"},
         json={"name": "Test Bot", "username": username, "game": "Grow a Garden"},
     )
     assert registration.status_code in (201, 409)
@@ -26,6 +29,6 @@ def test_register_heartbeat_and_list_bots():
     )
     assert heartbeat.status_code == 200
     assert heartbeat.json()["status"] == "online"
-    listing = client.get("/api/v1/bots", headers={"X-Admin-Key": "dev-admin-key"})
+    listing = client.get("/api/v1/bots", headers={"X-Admin-Key": "test-admin-key"})
     assert listing.status_code == 200
     assert listing.json()["total"] >= 1
