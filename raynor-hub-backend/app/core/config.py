@@ -30,6 +30,16 @@ class Settings(BaseSettings):
     # false = terima webhook tanpa verifikasi (HANYA untuk mencocokkan format
     # tanda tangan saat integrasi awal; jangan dibiarkan false di produksi).
     u7buy_verify_signature: bool = True
+    # Hanya order game ini yang diproses. Akun U7Buy bisa menjual beberapa game
+    # sekaligus, dan bot hanya berada di satu game — tanpa saringan ini bot akan
+    # mencoba mengirim item yang tidak ada di game yang dimainkannya.
+    u7buy_game_name: str = "Grow a Garden 2"
+    # Ubah status order di U7Buy (start/complete delivery) setelah bot mengirim.
+    # MATI secara default: ini mengubah order pembeli yang sesungguhnya, jadi
+    # harus dinyalakan secara sadar setelah alurnya terbukti benar.
+    u7buy_callback_enabled: bool = False
+    # Selang pemrosesan event webhook yang tertunda. 0 = matikan.
+    u7buy_process_interval_seconds: int = 60
 
     # --- Penangkap webhook generik (mis. notifikasi Discord dari VCGamers) ---
     # Rahasia ini menjadi bagian URL. Pengirim seperti webhook Discord tidak bisa

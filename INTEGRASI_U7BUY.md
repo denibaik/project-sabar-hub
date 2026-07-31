@@ -181,9 +181,45 @@ Nama produk U7Buy **tidak boleh** diteruskan apa adanya. Untuk kategori `Seeds`,
 game memvalidasi nama terhadap daftar benih yang sah, dan `"Ghost Pepper Seed"`
 tidak ada di daftar itu. Ini bukan soal kerapian — kirimannya benar-benar gagal.
 
-### 🚧 Tahap 3 — Sambungkan ke alur order (BELUM)
+### ✅ Tahap 3 — Tersambung ke alur order
 
-Otomatis penuh: webhook → order → bot kirim → `complete_deliery`.
+Webhook hanya menyimpan dan membalas cepat (U7Buy menunggu maksimal 5 detik).
+Pekerjaan sesungguhnya berjalan terpisah tiap `U7BUY_PROCESS_INTERVAL_SECONDS`:
+
+```
+event tertunda
+  → GET /open-api/order/{id}              detail order
+  → saring gameName                       game lain → ditandai "ignored"
+  → cari productId di product_map         tak ada → ditandai "failed", tidak ditebak
+  → GET .../delivery_param_info           username pembeli (dipangkas spasinya)
+  → buat Order  (quantity × per_unit)     masuk antrean, source="u7buy"
+  → POST .../start_deliery                ← hanya bila callback dinyalakan
+       ↓ bot kirim & verifikasi stok turun
+  → POST .../complete_deliery             ← hanya bila callback dinyalakan
+```
+
+Setiap event berakhir dengan status yang menjelaskan dirinya: `processed`,
+`ignored` (beserta alasan, mis. game lain), atau `failed` (beserta alasan, mis.
+produk belum dipetakan). Tidak ada event yang dicoba berulang tanpa henti,
+tidak ada pula yang hilang diam-diam.
+
+**Pemetaan produk disimpan di `config` channel U7Buy**, bukan di berkas setelan,
+sehingga dapat diubah tanpa menyalakan ulang backend.
+
+#### ⚠️ Callback ke U7Buy mati secara default
+
+`U7BUY_CALLBACK_ENABLED=false` berarti `start_deliery` dan `complete_deliery`
+**tidak dikirim** — hanya dicatat ke log. Seluruh alur lain tetap berjalan penuh,
+sehingga integrasi ini dapat diuji tanpa mengubah status order pembeli yang
+sesungguhnya.
+
+Nyalakan hanya setelah satu order uji terbukti berjalan benar dari ujung ke
+ujung. Sesudah dinyalakan, sistem akan menandai order pembeli sebagai selesai di
+marketplace — tindakan yang tidak dapat dibatalkan dari sisi kita.
+
+**Teruji:** 10 test otomatis (`tests/test_u7buy_processing.py`), seluruh
+panggilan jaringan digantikan tiruan. Termasuk pengujian bahwa dengan callback
+mati, **tidak ada satu pun permintaan keluar** yang dikirim.
 
 ---
 

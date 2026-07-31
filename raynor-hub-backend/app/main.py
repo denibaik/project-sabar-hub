@@ -17,6 +17,7 @@ from app.infrastructure.repositories.sqlalchemy_order_repository import (
 from app.infrastructure.repositories.sqlalchemy_webhook_repository import SqlAlchemyWebhookRepository
 from app.infrastructure.security.rate_limit import limiter
 from app.infrastructure.security.u7buy_signature import verify as verify_u7buy, debug_candidates as debug_u7buy
+from app.infrastructure.marketplaces.u7buy_client import U7BuyClient, U7BuyError
 from app.infrastructure.security.token_hasher import generate_token, hash_token, verify_token, token_prefix
 from app.api.v1.schemas.bots import BotHeartbeatRequest, BotListResponse, BotResponse, RegisterBotRequest, RegisterBotResponse
 from app.api.v1.schemas.orders import (
@@ -64,6 +65,12 @@ async def lifespan(_: FastAPI):
         tasks.append(asyncio.create_task(_periodic(
             "sweeper", settings.sweeper_interval_seconds,
             lambda db: (lambda n: f"{n} order kedaluwarsa ditandai failed" if n else 0)(sweep_stale_orders(db)),
+        )))
+
+    if settings.u7buy_process_interval_seconds > 0:
+        tasks.append(asyncio.create_task(_periodic(
+            "u7buy", settings.u7buy_process_interval_seconds,
+            lambda db: (lambda n: f"{n} order baru dari U7Buy" if n else 0)(process_u7buy_events(db)),
         )))
 
     if settings.sheet_sync_interval_seconds > 0:
@@ -593,7 +600,10 @@ def report_result(payload: ResultRequest, token: str = Depends(authenticate_bot)
     else:
         order.status = {"fulfilled": OrderStatus.DONE, "partial": OrderStatus.PARTIAL, "failed": OrderStatus.FAILED}.get(payload.status, OrderStatus.FAILED)
         order.error = payload.error
-    return order_response(orders.save(order))
+    tersimpan = orders.save(order)
+    if tersimpan.status == OrderStatus.DONE:
+        notify_u7buy_complete(tersimpan)
+    return order_response(tersimpan)
 
 
 # ============================ MARKETPLACE CHANNELS ============================
@@ -709,6 +719,136 @@ def sync_google_sheet(db: Session, ch: Channel) -> dict:
     ch.status = ChannelStatus.CONNECTED
     repo.save(ch)
     return {"imported": imported, "skipped": skipped, "errors": errors}
+
+
+# ======================= PEMROSESAN EVENT U7BUY =======================
+
+def u7buy_client() -> U7BuyClient:
+    return U7BuyClient(
+        settings.u7buy_app_id, settings.u7buy_app_secret, settings.u7buy_base_url,
+        callback_enabled=settings.u7buy_callback_enabled,
+    )
+
+
+def u7buy_product_map(db: Session) -> dict:
+    """`product_map` dari channel U7Buy yang aktif.
+
+    Disimpan di channel, bukan di berkas setelan, supaya bisa diubah lewat
+    dashboard tanpa perlu menyalakan ulang backend.
+    """
+    for ch in SqlAlchemyChannelRepository(db).list():
+        if ch.type == ChannelType.U7BUY and ch.enabled:
+            return (ch.config or {}).get("product_map") or {}
+    return {}
+
+
+def _u7buy_order_id(payload: str) -> str | None:
+    try:
+        body = json.loads(payload)
+    except ValueError:
+        return None
+    data = body.get("data") or {}
+    oid = data.get("orderId")
+    return str(oid) if oid else None
+
+
+def process_u7buy_events(db: Session) -> int:
+    """Ubah event webhook yang tertunda menjadi order di antrean kita.
+
+    Webhook sendiri sengaja hanya menyimpan dan membalas cepat (U7Buy menunggu
+    maksimal 5 detik). Pekerjaan sesungguhnya — memanggil API, memetakan produk,
+    membuat order — dilakukan di sini, terpisah dari permintaan HTTP itu.
+
+    Event yang tidak bisa diproses ditandai beserta alasannya, tidak dicoba
+    berulang tanpa henti dan tidak pula dibuang diam-diam.
+    """
+    if not (settings.u7buy_app_id and settings.u7buy_app_secret):
+        return 0
+
+    repo = SqlAlchemyWebhookRepository(db)
+    tertunda = repo.pending("u7buy")
+    if not tertunda:
+        return 0
+
+    peta = u7buy_product_map(db)
+    klien = u7buy_client()
+    orders = SqlAlchemyOrderRepository(db)
+    dibuat = 0
+
+    for row in tertunda:
+        if row.event != "new_order_received":
+            repo.mark(row, "ignored", f"event {row.event} tidak menghasilkan order")
+            continue
+
+        order_id = _u7buy_order_id(row.payload)
+        if not order_id:
+            repo.mark(row, "failed", "payload tidak memuat orderId")
+            continue
+
+        try:
+            detail = klien.get_order(order_id)
+        except U7BuyError as e:
+            repo.mark(row, "failed", f"gagal mengambil detail order: {e}")
+            continue
+
+        game = str(detail.get("gameName") or "")
+        if settings.u7buy_game_name and game != settings.u7buy_game_name:
+            repo.mark(row, "ignored", f"game lain: {game!r}")
+            continue
+
+        product_id = str(detail.get("productId") or "")
+        entri = peta.get(product_id)
+        if not entri:
+            repo.mark(row, "failed",
+                      f"produk belum dipetakan: productId={product_id} "
+                      f"nama={detail.get('productName')!r}")
+            continue
+
+        try:
+            username = klien.get_buyer_username(order_id)
+        except U7BuyError as e:
+            repo.mark(row, "failed", f"gagal mengambil parameter pengiriman: {e}")
+            continue
+        if not username:
+            repo.mark(row, "failed", "username Roblox pembeli tidak ditemukan")
+            continue
+
+        # Jumlah yang dibeli dikali isi per unit. Nama produk U7Buy menanam
+        # jumlahnya di judul ("150x Trowel"), jadi tanpa per_unit pembeli hanya
+        # menerima satu dari sekian yang dibayarnya.
+        jumlah = max(1, int(detail.get("quantity") or 1)) * max(1, int(entri.get("per_unit") or 1))
+
+        order = Order(
+            uuid4(), username,
+            [OrderItem(str(entri["category"]), str(entri["item_key"]), jumlah)],
+            note=f"u7buy:{order_id}", source="u7buy",
+        )
+        orders.create(order)
+        dibuat += 1
+
+        try:
+            klien.start_delivery(order_id)
+        except U7BuyError as e:
+            # Ordernya sudah masuk antrean kita dan tetap akan dikirim; kegagalan
+            # menandai "Delivering" di U7Buy bukan alasan membatalkannya.
+            print(f"[u7buy] start_deliery gagal untuk {order_id}: {e}")
+
+        repo.mark(row, "processed", None)
+
+    return dibuat
+
+
+def notify_u7buy_complete(order: Order) -> None:
+    """Tandai order selesai di U7Buy setelah bot benar-benar mengirim."""
+    if order.source != "u7buy" or not settings.u7buy_callback_enabled:
+        return
+    note = order.note or ""
+    if not note.startswith("u7buy:"):
+        return
+    try:
+        u7buy_client().complete_delivery(note.removeprefix("u7buy:"))
+    except U7BuyError as e:
+        print(f"[u7buy] complete_deliery gagal untuk {note}: {e}")
 
 
 def sync_enabled_sheets(db: Session) -> int:
