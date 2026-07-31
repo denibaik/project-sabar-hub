@@ -5,72 +5,66 @@ Diurutkan dari yang paling menghalangi deploy.
 
 Legenda: **[UJI]** = dibuktikan dengan tes · **[KODE]** = dari pembacaan kode
 
----
-
-## 🔴 BLOCKER — jangan deploy publik sebelum ini beres
-
-### 1. Tidak ada autentikasi sama sekali
-**[KODE]** `GET /api/v1/bots`, `/api/v1/orders`, `/api/v1/items` terbuka tanpa auth.
-Dashboard Next.js juga tanpa login.
-
-Begitu di VPS, siapa pun yang tahu alamatnya bisa melihat seluruh bot, order,
-username pembeli, dan isi stokmu. Tidak ada yang menghalangi.
-
-**Perbaikan:** tambah auth admin (session/JWT) untuk dashboard + endpoint baca.
+> **Status 31 Juli 2026** — #1, #2, #5 sudah **DIPERBAIKI** (commit `c6f4767`).
+> #3 sebagian, #4 masih terbuka. Sisanya belum dikerjakan.
 
 ---
 
-### 2. Registration key bocor ke browser
-**[KODE]** `raynor-hub-frontend/.env.local` memakai `NEXT_PUBLIC_REGISTRATION_KEY`.
+## ✅ SUDAH DIPERBAIKI
 
-Semua variabel `NEXT_PUBLIC_*` **ikut ter-bundle ke JavaScript yang dikirim ke browser**.
-Siapa pun cukup buka DevTools untuk mendapatkannya. Kunci itu yang melindungi:
-- `POST /api/v1/orders` → **bisa menyuruh bot-mu mengirim item ke username mana pun**
-- `POST /api/v1/bots` → mendaftarkan bot
+### 1. ~~Tidak ada autentikasi~~ → SELESAI
+Backend kini menuntut `X-Admin-Key` pada `GET /bots`, `/orders`, `/items`,
+`POST /orders`, dan seluruh endpoint channels. Dashboard di balik halaman login
+(cookie httpOnly bertanda-tangan HMAC, middleware Next.js).
 
-Ini jalur kehilangan barang paling langsung.
+**[UJI]** Tanpa admin key → 401. Tanpa sesi → `/dashboard` redirect ke `/login`,
+proxy balas `{"error":"unauthorized"}` 401.
 
-**Perbaikan:** pindahkan pemanggilan ber-key ke Next.js Route Handler / Server Action
-(kunci tetap di server), jangan pernah `NEXT_PUBLIC_*` untuk secret.
+### 2. ~~Registration key bocor ke browser~~ → SELESAI
+`NEXT_PUBLIC_REGISTRATION_KEY` dihapus. Semua panggilan dashboard lewat
+proxy server-side `/api/backend/[...path]` yang menyuntikkan kunci di server.
+
+**[UJI]** Pencarian `dev-admin-key`, `dev-registration-key`, `changeme`,
+`dev-session-secret` di seluruh bundle browser (`.next/static`): **0 kecocokan**.
+
+### 5. ~~CORS terkunci ke localhost~~ → SELESAI
+Sekarang dari env: `CORS_ORIGINS` (dipisah koma).
 
 ---
 
-### 3. Registration key ada di script bot yang dipublikasikan
-**[KODE]** `RaynorHubBot.lua` memuat `REGISTRATION_KEY = "dev-registration-key"`,
-dan script itu sudah publik di GitHub + disajikan `/files/loader.lua`.
+## 🔴 BLOCKER — masih terbuka
 
-Masalahnya bukan sekadar nilai default — ini **cacat desain**: script auto-register
-harus membawa kunci, dan script itu dibagikan publik, jadi kuncinya selalu ikut publik.
+### 3. Registration key masih ada di script bot publik ⚠️ SEBAGIAN
+**[KODE]** `RaynorHubBot.lua` masih memuat `REGISTRATION_KEY`, dan script itu publik
+di GitHub + `/files/loader.lua`.
+
+**Yang membaik:** kunci pendaftaran kini **terpisah** dari admin key. Jadi kunci yang
+bocor lewat script **tidak lagi** bisa dipakai membuat order atau membaca data.
+Dampaknya menyempit jadi: hanya bisa mendaftarkan bot.
+
+**Yang tersisa:** cacat desainnya tetap ada — script auto-register harus membawa kunci,
+dan script-nya dibagikan publik.
 
 **Perbaikan (pilih satu):**
-- **A. Pra-register di dashboard** → tanam *bot token* (per akun) di script, bukan
-  registration key. Script jadi per-bot, tapi kunci pendaftaran tak pernah bocor.
-- **B. Kode pendaftaran sekali pakai** — dashboard menerbitkan kode berumur pendek;
-  script menukarnya jadi token permanen.
-
----
+- **A. Pra-register di dashboard** → tanam *bot token* (per akun) di script.
+- **B. Kode pendaftaran sekali pakai** — dashboard menerbitkan kode berumur pendek.
 
 ### 4. Bot palsu bisa "menyelesaikan" order tanpa mengirim apa pun
-**[KODE]** Konsekuensi dari #3. Siapa pun yang punya registration key bisa
-mendaftarkan bot palsu, mengklaim order, lalu `POST /result` dengan
-`status="fulfilled"` — backend memercayainya tanpa verifikasi.
+**[KODE]** Konsekuensi dari #3. Siapa pun dengan registration key bisa mendaftarkan
+bot palsu, mengklaim order, lalu `POST /result` `status="fulfilled"` — backend
+memercayainya tanpa verifikasi.
 
 Akibatnya: pembeli tidak menerima barang, tapi sistem mencatat `done`.
 Untuk marketplace berbayar, ini fatal.
 
-**Perbaikan:** batasi bot yang boleh mendaftar (#3), dan pertimbangkan verifikasi
-silang (mis. bandingkan penurunan stok yang dilaporkan bot dengan snapshot sebelumnya).
+**Perbaikan:** tutup #3 dulu, lalu pertimbangkan verifikasi silang (bandingkan
+penurunan stok yang dilaporkan bot dengan snapshot heartbeat sebelumnya).
 
----
+### 4b. Kunci default masih nilai contoh
+`dev-admin-key`, `dev-registration-key`, `changeme`, `dev-session-secret-change-me`
+— semuanya masih default dan sebagian sudah publik di repo.
 
-### 5. CORS terkunci ke localhost
-**[KODE]** `app/main.py`:
-```python
-allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"]
-```
-Dashboard di VPS akan langsung gagal memanggil API.
-
-**Perbaikan:** ambil dari env, mis. `CORS_ORIGINS=https://dashboard.domainmu.com`.
+**Wajib** diganti dengan nilai acak panjang sebelum VPS menyentuh internet.
 
 ---
 
@@ -198,10 +192,11 @@ Perlu nginx atau Caddy (TLS otomatis) + systemd agar backend hidup lagi setelah 
 ## Urutan pengerjaan yang kusarankan
 
 **Sebelum VPS menyentuh internet:**
-1. CORS dari env (#5) — kalau tidak, aplikasi langsung rusak
-2. Registration key: keluarkan dari browser (#2) dan dari script publik (#3, #4)
-3. Auth admin untuk dashboard + endpoint baca (#1)
-4. Ganti `dev-registration-key` dengan nilai acak panjang
+1. ~~CORS dari env (#5)~~ ✅
+2. ~~Keluarkan kunci dari browser (#2)~~ ✅
+3. ~~Auth admin untuk dashboard + endpoint baca (#1)~~ ✅
+4. **Ganti semua kunci default** (#4b) — belum
+5. **Keluarkan registration key dari script publik** (#3, #4) — belum
 
 **Sebelum menerima pembeli sungguhan:**
 5. Perbaiki auth bot O(n) (#6) — ini sudah lambat di 10 bot
