@@ -22,7 +22,8 @@
 -- ============================================================
 
 local CONFIG = {
-    BASE_URL         = "http://127.0.0.1:8000",   -- ganti ke domain VPS saat deploy
+    BASE_URL         = "http://127.0.0.1:8000",   -- diisi otomatis oleh backend (PUBLIC_API_URL)
+                                                  -- saat script disajikan lewat /files/loader.lua
     BOT_NAME         = "",                          -- kosong = pakai username akun
     GAME             = "Grow a Garden",
     HEARTBEAT        = 15,     -- detik antar heartbeat
