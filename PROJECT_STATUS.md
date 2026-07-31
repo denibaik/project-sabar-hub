@@ -136,8 +136,10 @@ mencoba ulang, dan sweeper hanya menangani order `pending` — order itu berhent
 Penanggulangan sementara: sebelum me-restart backend, pastikan tidak ada order
 berstatus `processing` di dashboard. Antrean biasanya kosong, jadi ini mudah.
 
-Perbaikan yang direncanakan: bot mencoba ulang laporannya beberapa kali, dan
-sweeper melepas order `processing` yang bot-nya sudah lama tak mengirim heartbeat.
+**Keputusan (31 Juli): dibiarkan, ditangani manual.** Volume order masih kecil dan
+order nyangkut mudah dibereskan lewat dashboard. Kalau nanti sering terjadi,
+perbaikannya: bot mencoba ulang laporannya beberapa kali, dan sweeper melepas
+order `processing` yang bot-nya sudah lama tak mengirim heartbeat.
 
 ### 🚧 Belum
 - **Tanda tangan webhook U7Buy belum terverifikasi.** Dokumentasi mereka tidak
