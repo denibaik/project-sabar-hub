@@ -34,6 +34,15 @@ Terakhir diperbarui: **31 Juli 2026**. Berjalan di produksi:
 **Prinsip inti:** verifikasi berbasis inventory — order hanya `done` kalau item
 benar-benar keluar dari tas bot, bukan sekadar "request terkirim".
 
+**Prinsip kedua:** yang tidak bisa dipastikan tidak ditebak. Produk yang belum
+dipetakan, nama yang cocok dengan lebih dari satu item, order dari game lain —
+semuanya ditandai beserta alasannya, tidak diproses asal jalan. Mengirim barang
+yang salah lebih merugikan daripada order yang tertunda.
+
+**Prinsip ketiga:** tindakan yang mengubah keadaan di luar sistem kita
+(`start_deliery`, `complete_deliery`, menulis stok listing) **mati secara
+default** dan harus dinyalakan sadar-sadar lewat `.env`.
+
 ---
 
 ## 2. Menjalankan (3 proses)
@@ -109,6 +118,26 @@ ter-track git dan editannya membuat `git pull` bentrok.
   executor & apakah token bisa disimpan.
 - **Penjaga database** — backend menyebutkan database yang dibuka saat menyala,
   dan berterus terang bila jatuh ke nilai bawaan.
+- **Perbandingan stok listing** — `/api/v1/u7buy/stock-plan` membandingkan angka
+  stok di listing U7Buy dengan stok bot yang sesungguhnya
+  (`stok bot ÷ per_unit`, dibulatkan ke bawah). Hanya membaca. Penulisannya ada
+  tapi **mati secara default** (`U7BUY_STOCK_SYNC_ENABLED`).
+
+**70 test otomatis**, seluruhnya lolos. Panggilan jaringan ke marketplace selalu
+digantikan tiruan — tidak ada test yang menyentuh order pembeli sungguhan.
+
+### 🐛 Celah yang diketahui, belum ditambal
+
+**Order `processing` bisa nyangkut selamanya.** Kalau bot selesai mengirim lalu
+laporan hasilnya gagal sampai ke backend (mis. backend sedang restart), bot tidak
+mencoba ulang, dan sweeper hanya menangani order `pending` — order itu berhenti di
+`processing` tanpa ada yang membereskannya.
+
+Penanggulangan sementara: sebelum me-restart backend, pastikan tidak ada order
+berstatus `processing` di dashboard. Antrean biasanya kosong, jadi ini mudah.
+
+Perbaikan yang direncanakan: bot mencoba ulang laporannya beberapa kali, dan
+sweeper melepas order `processing` yang bot-nya sudah lama tak mengirim heartbeat.
 
 ### 🚧 Belum
 - **Tanda tangan webhook U7Buy belum terverifikasi.** Dokumentasi mereka tidak
@@ -173,7 +202,7 @@ Panduan deploy VPS: lihat **DEPLOY_DIGITALOCEAN.md**.
 |---|---|
 | Cocokkan tanda tangan U7Buy | *"Ini log webhook U7Buy pertama, cocokkan rumus tanda tangannya"* (sertakan log) |
 | Alembic | *"Pasang Alembic untuk migrasi skema"* |
-| Sinkron stok otomatis | *"Perbarui stok listing marketplace dari stok bot secara otomatis"* |
+| Tambal order nyangkut | *"Bot coba ulang laporan hasil; sweeper lepas order processing yang botnya offline"* |
 | Web store publik | *"Buat halaman web store publik untuk pembeli"* |
 | Landing page | *"Buat landing page di sabarhub.me"* |
 | Form koneksi channel lain | *"Sambungkan form /marketplace/[slug] ke CRUD channels"* |
@@ -205,6 +234,8 @@ POST /api/v1/channels/{id}/sync   X-Admin-Key         Google Sheet → order
 POST /api/v1/webhooks/u7buy       tanda tangan        notifikasi U7Buy (body kosong = uji koneksi)
 GET  /api/v1/webhooks/events      X-Admin-Key         riwayat webhook + nasibnya
 GET  /api/v1/u7buy/offers         X-Admin-Key         listing U7Buy + usulan pemetaan
+GET  /api/v1/u7buy/stock-plan     X-Admin-Key         stok listing vs stok bot (baca saja)
+POST /api/v1/u7buy/stock-sync     X-Admin-Key         tulis stok ke listing (ditolak bila mati)
 POST /api/v1/orders/sweep         X-Admin-Key         sapu order kedaluwarsa
 ```
 Docs interaktif: `http://127.0.0.1:8000/docs`
