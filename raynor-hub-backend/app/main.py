@@ -158,6 +158,37 @@ def _looks_like_uuid(value: str) -> bool:
     return len(value) == 36 and value.count("-") == 4
 
 
+def _canon(value: str) -> str:
+    """Bentuk baku untuk membandingkan nama kategori/item.
+
+    Order dari Google Sheet diketik manusia, jadi ejaannya tak pernah persis:
+    "seeds" vs "Seeds", "Dragon Breath" vs "Dragon's Breath". Perbandingan
+    persis membuat order gagal `no_bot_has_stock` padahal stoknya ada.
+
+    Tiap kata dibuang akhiran "s"-nya, sehingga bentuk jamak dan sisipan "'s"
+    ikut senada: "Dragon's Breath" dan "Dragon Breath" sama-sama jadi
+    "dragonbreath", "seed" dan "Seeds" sama-sama "seed".
+    """
+    kata = re.split(r"[^a-z0-9]+", (value or "").lower())
+    return "".join(k[:-1] if k.endswith("s") else k for k in kata if k)
+
+
+def _match_key(bucket: dict, wanted: str) -> str | None:
+    """Cari kunci di `bucket` yang cocok dengan `wanted`.
+
+    Persis dulu; baru longgar. Kalau bentuk longgarnya cocok dengan LEBIH DARI
+    SATU kunci berbeda, tidak ada yang dipilih — menebak berarti berisiko
+    mengirim barang yang salah, dan itu lebih buruk daripada order gagal.
+    """
+    if wanted in bucket:
+        return wanted
+    target = _canon(wanted)
+    if not target:
+        return None
+    cocok = [k for k in bucket if _canon(k) == target]
+    return cocok[0] if len(cocok) == 1 else None
+
+
 def owned_count(inventory: dict, names: dict, category: str, item_key: str) -> int:
     """Jumlah yang dimiliki untuk (category, item_key).
 
@@ -166,15 +197,20 @@ def owned_count(inventory: dict, names: dict, category: str, item_key: str) -> i
     dan di sini dihitung berapa ekor yang namanya cocok. UUID tetap diterima
     demi order lama.
     """
-    bucket = inventory.get(category) or {}
-    if category != PET_CATEGORY or _looks_like_uuid(item_key):
-        return bucket.get(item_key, 0)
+    cat = _match_key(inventory, category)
+    if cat is None:
+        return 0
+    bucket = inventory.get(cat) or {}
 
-    name_map = (names or {}).get(category) or {}
-    wanted = item_key.strip().lower()
+    if cat != PET_CATEGORY or _looks_like_uuid(item_key):
+        key = _match_key(bucket, item_key)
+        return bucket.get(key, 0) if key else 0
+
+    name_map = (names or {}).get(cat) or {}
+    wanted = _canon(item_key)
     return sum(
         1 for uuid in bucket
-        if (name_map.get(uuid) or uuid).strip().lower() == wanted
+        if _canon(name_map.get(uuid) or uuid) == wanted
     )
 
 
@@ -184,14 +220,61 @@ def can_fulfill(inventory: dict, items, names: dict | None = None) -> bool:
             return False
     return True
 
-def order_response(o: Order) -> OrderResponse:
+def canonical_item(inventory: dict, names: dict, category: str, item_key: str) -> tuple[str, str]:
+    """Ejaan (category, item_key) persis seperti di inventaris bot.
+
+    Backend boleh longgar saat mencocokkan stok, tapi bot mencari item di game
+    dengan kunci yang kita kirim — kalau ejaannya beda, bot tak menemukannya
+    walau barangnya ada. Jadi bakukan dulu sebelum order diserahkan.
+    """
+    cat = _match_key(inventory, category)
+    if cat is None:
+        return category, item_key
+    bucket = inventory.get(cat) or {}
+
+    if cat != PET_CATEGORY or _looks_like_uuid(item_key):
+        return cat, (_match_key(bucket, item_key) or item_key)
+
+    name_map = (names or {}).get(cat) or {}
+    wanted = _canon(item_key)
+    for uuid in bucket:
+        nama = name_map.get(uuid) or uuid
+        if _canon(nama) == wanted:
+            return cat, nama
+    return cat, item_key
+
+
+def order_response(o: Order, inventory: dict | None = None, names: dict | None = None) -> OrderResponse:
+    def item_dict(i):
+        cat, key = i.category, i.item_key
+        if inventory is not None:
+            cat, key = canonical_item(inventory, names or {}, cat, key)
+        return {"category": cat, "item_key": key, "count": i.count}
+
     return OrderResponse(
         id=o.id, recipient=o.recipient,
-        items=[{"category": i.category, "item_key": i.item_key, "count": i.count} for i in o.items],
+        items=[item_dict(i) for i in o.items],
         note=o.note, source=o.source or "manual", status=o.status, assigned_bot=o.assigned_bot,
         sent_total=o.sent_total, requested_total=o.requested_total, error=o.error,
         created_at=o.created_at, updated_at=o.updated_at,
     )
+
+def _kurang_apa(online: list, items) -> str:
+    """Sebut item mana yang kurang, plus stok terbanyak yang ada.
+
+    "no_bot_has_stock" saja tak cukup untuk menindaklanjuti: penyebab tersering
+    adalah salah ketik nama item di sheet, dan itu hanya kelihatan kalau
+    ditampilkan bahwa stok terbanyak = 0.
+    """
+    if not online:
+        return "tak ada bot online"
+    kurang = []
+    for it in items:
+        ada = max(owned_count(stok, nm, it.category, it.item_key) for stok, nm in online)
+        if ada < it.count:
+            kurang.append(f"{it.category}/{it.item_key}: minta {it.count}, stok terbanyak {ada}")
+    return "; ".join(kurang) or "stok berubah saat diperiksa"
+
 
 def sweep_stale_orders(db: Session) -> int:
     """Tandai `failed` order pending yang sudah lama & tak bisa dipenuhi siapa pun.
@@ -219,7 +302,7 @@ def sweep_stale_orders(db: Session) -> int:
         if any(can_fulfill(stock, order.items, nm) for stock, nm in online):
             continue  # masih ada yang sanggup — biarkan
         order.status = OrderStatus.FAILED
-        order.error = "no_bot_has_stock (kedaluwarsa)"
+        order.error = "no_bot_has_stock (kedaluwarsa) — " + _kurang_apa(online, order.items)
         orders.save(order)
         swept += 1
     return swept
@@ -465,7 +548,7 @@ def claim_order(payload: ClaimRequest, response: Response, token: str = Depends(
         # yang sama (yang berarti barang terkirim dobel).
         claimed = orders.claim_atomically(order.id, bot.username)
         if claimed is not None:
-            return order_response(claimed)
+            return order_response(claimed, inventory, names)
     response.status_code = 204  # tak ada order yang bisa dipenuhi bot ini
     return None
 
