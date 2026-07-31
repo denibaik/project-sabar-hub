@@ -69,7 +69,7 @@ export default function BotsPage() {
           <div>
             <div className="mb-4 flex items-center gap-3"><div className="rounded-xl bg-indigo-500/15 p-3 text-indigo-300 ring-1 ring-indigo-400/20"><Bot className="h-6 w-6" /></div><Badge variant="outline" className="border-indigo-400/20 bg-indigo-500/10 text-indigo-300">Roblox Operations · Live</Badge></div>
             <h1 className="text-3xl font-semibold tracking-tight text-white md:text-4xl">Roblox Bot Network</h1>
-            <p className="mt-2 max-w-2xl text-sm text-slate-400">Data langsung dari backend. Bot online mengirim heartbeat + inventory tiap beberapa detik.</p>
+            <p className="mt-2 max-w-2xl text-sm text-slate-400">Pantau akun bot: status heartbeat, server, dan stok yang dilaporkan.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={load} className="border-white/10 bg-white/[0.03] text-slate-300"><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>

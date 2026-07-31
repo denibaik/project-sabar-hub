@@ -83,7 +83,7 @@ export default function OrdersPage() {
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 pb-10 text-slate-100">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div><Badge variant="outline" className="mb-3 border-indigo-400/20 bg-indigo-500/10 text-indigo-300">Fulfillment · Live</Badge><h1 className="text-3xl font-semibold tracking-tight text-white">Orders</h1><p className="mt-1 text-sm text-slate-500">Order nyata dari backend. Bot ber-stok otomatis claim → kirim → verifikasi.</p></div>
+        <div><Badge variant="outline" className="mb-3 border-indigo-400/20 bg-indigo-500/10 text-indigo-300">Fulfillment · Live</Badge><h1 className="text-3xl font-semibold tracking-tight text-white">Orders</h1><p className="mt-1 text-sm text-slate-500">Order otomatis dirutekan ke bot ber-stok, lalu dikirim dan diverifikasi.</p></div>
         <div className="flex gap-2"><Button variant="outline" onClick={load} className="border-white/10 bg-white/[0.03] text-slate-300"><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button><Button onClick={() => setShowForm((v) => !v)} className="bg-indigo-600 text-white hover:bg-indigo-500"><Plus className="mr-2 h-4 w-4" />New Order</Button></div>
       </header>
 

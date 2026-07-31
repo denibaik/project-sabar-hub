@@ -42,7 +42,7 @@ export default function ProductsPage() {
         <div>
           <Badge variant="outline" className="mb-3 border-indigo-400/20 bg-indigo-500/10 text-indigo-300">Sellable Catalog</Badge>
           <h1 className="text-3xl font-bold tracking-tight text-white">Products</h1>
-          <p className="mt-1 text-sm text-slate-500">Item yang siap dijual — otomatis dari stok bot online. Kategori = kategori mailbox game.</p>
+          <p className="mt-1 text-sm text-slate-500">Item siap jual, tersusun otomatis dari stok bot online.</p>
         </div>
         <Button variant="outline" onClick={load} className="border-white/10 bg-white/[0.03] text-slate-300"><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
       </div>
