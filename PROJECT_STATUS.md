@@ -1,130 +1,156 @@
 # Sabar Hub — Status Proyek & Panduan Lanjut
 
-Dokumen ini merangkum **sudah sampai mana** proyek Sabar Hub (sistem auto-send
-marketplace untuk Grow a Garden) dan **prompt apa** yang bisa kamu pakai untuk
-melanjutkan tiap bagian.
+Sistem auto-send marketplace untuk Grow a Garden.
+Terakhir diperbarui: **31 Juli 2026**.
 
 ---
 
-## 1. Workflow end-to-end (gambaran besar)
+## 1. Workflow end-to-end
 
 ```
 [Pembeli]
    │  order (username tujuan + item + qty)
    ▼
 [Marketplace channel]  ── Itemku / G2G / Eldorado / U7Buy / VCGamers / Web Store / Google Sheet
-   │  order masuk ke backend
+   │
    ▼
 [Backend FastAPI]  ──►  antrean order (pending) + routing berbasis stok
-   ▲                         │  bot polling
+   ▲                         │  bot polling (Bearer token)
    │ lapor hasil             ▼
-[Bot in-game (executor)]  RaynorHubBot.lua di akun Roblox
-   1. claim order (hanya yang stoknya ada)
+[Bot in-game (executor)]  RaynorHubBot.lua
+   1. claim order (hanya yang stoknya ada di bot ini)
    2. verifikasi username penerima
    3. cek stok + SendBatch (gift) — pecah otomatis kalau >20 item
    4. verifikasi inventory turun → lapor done/partial/failed
    ▼
-[Dashboard Next.js]  ──  pantau bots, orders, inventory, products (real-time)
+[Dashboard Next.js]  ── di balik login; semua panggilan lewat proxy server-side
 ```
 
-Prinsip inti: **verifikasi berbasis inventory** — order dianggap `done` hanya kalau
-item benar-benar keluar dari tas bot (bukan sekadar "request terkirim").
+**Prinsip inti:** verifikasi berbasis inventory — order hanya `done` kalau item
+benar-benar keluar dari tas bot, bukan sekadar "request terkirim".
 
 ---
 
-## 2. Komponen & lokasi
+## 2. Menjalankan (3 proses)
 
-| Komponen | Stack | Lokasi | Jalan di |
-|---|---|---|---|
-| Backend | FastAPI (Python) | `raynor-hub-backend/` | `http://127.0.0.1:8000` |
-| Bot | Lua (executor) | `../marketplace/RaynorHubBot.lua` | di dalam game, per akun |
-| Frontend | Next.js | `raynor-hub-frontend/` | `http://localhost:3000` |
-
-### Cara menjalankan (3 proses)
 ```bash
 # 1. Backend
-cd raynor-hub-backend && ./.venv/Scripts/python.exe -m uvicorn app.main:app --port 8000 --reload
+cd raynor-hub-backend && ./.venv/Scripts/python.exe -m uvicorn app.main:app --port 8000
 
 # 2. Frontend
 cd raynor-hub-frontend && npm run dev
 
-# 3. Bot: jalankan RaynorHubBot.lua di executor, di akun Roblox yang sudah:
-#    - selesai TUTORIAL game (gifting diblokir selama tutorial!)
-#    - punya stok item
+# 3. Bot: di executor, pada akun yang sudah SELESAI TUTORIAL & punya stok
 ```
+
+**Login dashboard:** `http://localhost:3000` → password ada di
+`raynor-hub-frontend/.env.local` (`DASHBOARD_PASSWORD`).
+
+**Menjalankan bot:**
+1. Dashboard → **Bot Network** → **Register Bot** → salin perintah yang muncul
+2. Tempel di executor:
+```lua
+getgenv().BOT_TOKEN = "sbr_bot_xxxxx"
+local u="http://127.0.0.1:8000/files/loader.lua";local ok,s=pcall(function() return game:HttpGet(u) end);loadstring(ok and s or (request or http_request)({Url=u,Method="GET"}).Body)()
+```
+Run berikutnya di akun yang sama tak perlu `BOT_TOKEN` lagi (tersimpan otomatis).
 
 ---
 
 ## 3. Status per fitur
 
-### ✅ SELESAI & TERBUKTI
-- **Backend — Bots**: register (`X-Registration-Key` → token), heartbeat + inventory (Bearer), list. Bot muncul online.
-- **Backend — Orders**: create, list, **claim (routing berbasis stok)**, result (fulfilled/partial/failed/released + retry cooldown + max_release→failed).
-- **Backend — Items**: `GET /api/v1/items` agregasi stok semua bot online.
-- **Backend — Channels**: CRUD channel + **Google Sheet sync fungsional** (baca CSV published → bikin order, dedup via `order_ref`). *Endpoint siap, form UI belum disambung.*
-- **Bot (RaynorHubBot.lua)**: register→heartbeat→claim→verifikasi penerima→cek stok→SendBatch→verifikasi inventory→result. Auto BOT_ID per akun. **Multi-item 1 order** + **auto-split >20 item** dengan cooldown ~10s.
-- **Kirim gift SUNGGUHAN**: terbukti (Strawberry, multi-item) ke raynorqt, terverifikasi inventory turun.
-- **Frontend wired ke backend (data nyata, polling)**: Dashboard (KPI + order terbaru + status bot), Orders (list + form New Order), Inventory (stok agregat), Products (katalog), Bots (register + heartbeat live).
-- **Sidebar Marketplace**: section dengan Itemku, G2G, Eldorado, U7Buy, VCGamers, Web Store, Google Sheet, Setup. Tiap channel punya halaman (UI placeholder, badge "Belum terhubung").
+### ✅ Selesai & teruji
+- **Backend Bots** — register (admin-only), heartbeat + inventory + nama item, list,
+  **cabut token** (`DELETE /api/v1/bots/{id}`).
+- **Backend Orders** — create, list, **claim dengan routing berbasis stok**,
+  result (fulfilled/partial/failed/released + cooldown retry + max_release→failed).
+- **Backend Items** — `GET /api/v1/items` agregasi stok semua bot online, dengan
+  `display_name` ramah (mis. "Golden Dragonfly", bukan UUID).
+- **Backend Channels** — CRUD + **Google Sheet sync** (baca CSV published → bikin order,
+  dedup via `order_ref`). *Endpoint jalan; UI-nya belum disambung.*
+- **Bot** — token-based (tanpa kunci di script), heartbeat, claim, verifikasi penerima,
+  cek stok, SendBatch, verifikasi inventory, multi-item 1 order, auto-split >20 item
+  dengan cooldown, single-instance guard.
+- **Kirim gift sungguhan** — terbukti end-to-end.
+- **Dashboard** — Bots, Orders (form dropdown ber-stok), Inventory, Products, Dashboard.
+  Semua data nyata, polling 3–5 detik.
+- **Keamanan** — login dashboard (cookie httpOnly HMAC), semua endpoint kelola butuh
+  `X-Admin-Key`, kunci hanya server-side (0 kebocoran ke browser), CORS dari env,
+  kunci acak kuat, pencabutan token bot.
+- **Sidebar Marketplace** — 7 channel + Setup (How to Use, Bot Script).
 
-### 🚧 BELUM / MENYUSUL
-- **Form koneksi channel** — halaman `/marketplace/[slug]` masih UI disabled. Backend channel API sudah siap, tinggal wiring form.
-- **Integrasi API marketplace asli** (Itemku/G2G/Eldorado/U7Buy/VCGamers tarik order otomatis) — butuh kredensial API asli mereka. Belum dibangun.
-- **Google Sheet sync UI** — logika backend jalan, tapi belum ada tombol "Sync" di dashboard + belum ada scheduler (baru manual via API).
-- **Web store publik** — halaman pembeli (pilih produk → checkout → `POST /api/v1/orders`). Belum dibuat.
-- **Backorder sweeper di backend** — order yang TAK ADA bot ber-stok saat ini akan menggantung `pending` selamanya (belum ada timeout→failed). *Catatan: ada di mock-server.js lama, belum diport ke FastAPI.*
-- **Halaman `/` (index lama) & AI Control Center** — masih mock, belum di-wire.
-- **Keamanan produksi** — `NEXT_PUBLIC_REGISTRATION_KEY` terekspos ke client (OK untuk dev, produksi harus proxy lewat server). Auth bot pakai Bearer token (sudah hashed di DB).
+### 🚧 Belum
+- **Form koneksi channel** — halaman `/marketplace/[slug]` masih UI placeholder.
+- **Google Sheet sync UI** — backend jalan, tombol Sync di dashboard belum ada. ← *berikutnya*
+- **Integrasi API marketplace asli** — butuh kredensial Itemku/G2G/dll.
+- **Web store publik** — halaman pembeli belum dibuat.
+- **Backorder sweeper** — order tanpa bot ber-stok menggantung `pending` selamanya.
+- **Auth bot O(n)** — terukur 0,48 dtk pada 10 bot; perlu lookup by token-prefix.
+- **PostgreSQL + claim aman balapan**, **Alembic**, **rate limiting**, **TLS/systemd**.
+- Halaman `/` (index lama) & AI Control Center masih mock.
 
-### ⚠️ Hal penting yang dipelajari (jangan lupa)
-- **Tutorial wajib selesai** di tiap akun bot sebelum bisa gifting (`"You can't gift items during the tutorial!"`).
-- **Cooldown ~8 detik** antar gift → `ORDER_GAP=10`, `GIFT_COOLDOWN=10` di bot.
-- **Batas 20 item** distinct per SendBatch → bot auto-split.
-- **Stok harus sah di server** — item hasil inject client-side bisa ditolak server.
-- Belum di-commit/push ke GitHub (ini clone lokal). Saran: tambah `data/`, `.venv/`, `.env.local`, `node_modules/` ke `.gitignore`.
+Detail lengkap + prioritas: lihat **PRE_DEPLOY_AUDIT.md**.
 
 ---
 
-## 4. Prompt untuk melanjutkan (tinggal salin)
+## 4. Hal penting yang mudah terlupa
 
-| Mau lanjut apa | Prompt yang bisa dipakai |
+- **Tutorial wajib selesai** di tiap akun bot — kalau belum, server menolak gifting.
+- **Cooldown ~8 detik** antar gift; bot memakai jeda 10 detik.
+- **Maks 20 item** distinct per SendBatch — order lebih besar dipecah otomatis.
+- **category & item_key case-sensitive** — form dashboard sudah pakai dropdown, jadi
+  tak bisa salah ketik lagi. Kalau bikin order lewat API, tulis persis:
+  `Seeds`, `Trowels`, `WateringCans`, `Sprinklers`, `Pets`, `HarvestedFruits`, dst.
+- **Stok harus sah di server** — item hasil inject client-side ditolak saat kirim.
+- **Kunci frontend & backend harus sama persis** (`ADMIN_API_KEY`, `BOT_REGISTRATION_KEY`).
+- Jangan pernah pakai `NEXT_PUBLIC_` untuk secret — ikut ter-bundle ke browser.
+
+---
+
+## 5. Prompt untuk melanjutkan
+
+| Mau lanjut apa | Prompt |
 |---|---|
-| Sambungkan form Google Sheet | *"Wire form halaman /marketplace/google-sheet ke endpoint channels + sync di backend, biar bisa masukin CSV URL dan klik Sync"* |
-| Sambungkan Web Store | *"Wire form /marketplace/webstore: buat channel webstore + tampilkan webhook URL untuk terima order"* |
-| Web store publik untuk pembeli | *"Buat halaman web store publik: pembeli pilih produk dari katalog, isi username, checkout → bikin order"* |
-| Backorder sweeper | *"Tambah backorder sweeper di backend FastAPI: order pending yang tak ada bot ber-stok online → failed setelah timeout"* |
-| Integrasi marketplace asli | *"Integrasi API Itemku untuk tarik order berbayar otomatis jadi order di backend"* (siapkan kredensial API) |
-| Wire form semua channel | *"Wire semua form /marketplace/[slug] ke CRUD channels: add, enable/disable, simpan config, hapus"* |
-| Tampilkan stok per bot di dashboard | *"Tambah kolom inventory count di list bot + halaman detail stok per bot"* |
-| Commit & push | *"Rapikan .gitignore lalu bantu commit perubahan ke branch baru"* |
+| Google Sheet sync UI | *"Sambungkan form /marketplace/google-sheet ke endpoint channels + sync"* |
+| Web store publik | *"Buat halaman web store publik untuk pembeli"* |
+| Backorder sweeper | *"Tambah backorder sweeper: order pending tanpa bot ber-stok → failed setelah timeout"* |
+| Perbaiki auth O(n) | *"Percepat resolve_bot: lookup token pakai prefix ber-index, argon2 sekali saja"* |
+| PostgreSQL + Alembic | *"Pindahkan backend ke PostgreSQL dan pasang Alembic"* |
+| Claim aman balapan | *"Amankan claim dari race: SELECT FOR UPDATE SKIP LOCKED / UPDATE bersyarat"* |
+| Integrasi marketplace | *"Integrasi API Itemku untuk tarik order otomatis"* (siapkan kredensial) |
+| Deploy VPS | *"Bantu deploy ke VPS: nginx + TLS + systemd + PostgreSQL"* |
 
 ---
 
-## 5. Endpoint backend (referensi cepat)
+## 6. Endpoint backend
 
 ```
-GET  /health
-POST /api/v1/bots                 (X-Registration-Key)      register bot
-POST /api/v1/bots/heartbeat       (Bearer)                  heartbeat + inventory
-GET  /api/v1/bots                                           list bots
-POST /api/v1/bots/claim           (Bearer)                  claim order (routing stok)
-POST /api/v1/bots/result          (Bearer)                  lapor hasil
-POST /api/v1/orders               (X-Registration-Key)      buat order
-GET  /api/v1/orders                                         list orders
-GET  /api/v1/items                                          agregasi stok bot online
-GET  /api/v1/channels                                       list channel
-POST /api/v1/channels             (X-Registration-Key)      buat channel
-PATCH  /api/v1/channels/{id}      (X-Registration-Key)      update/enable channel
-DELETE /api/v1/channels/{id}      (X-Registration-Key)      hapus channel
-POST /api/v1/channels/{id}/sync   (X-Registration-Key)      Google Sheet: import order dari CSV
+GET  /health                                          publik
+GET  /files/loader.lua                                publik (script bot, tanpa kunci)
+
+POST /api/v1/bots                 X-Registration-Key  daftarkan bot (dipakai dashboard)
+DELETE /api/v1/bots/{id}          X-Admin-Key         cabut token & hapus bot
+GET  /api/v1/bots                 X-Admin-Key         list bot
+POST /api/v1/bots/heartbeat       Bearer              heartbeat + inventory + names
+POST /api/v1/bots/claim           Bearer              ambil order (routing stok)
+POST /api/v1/bots/result          Bearer              lapor hasil
+
+POST /api/v1/orders               X-Admin-Key         buat order
+GET  /api/v1/orders               X-Admin-Key         list order
+GET  /api/v1/items                X-Admin-Key         stok agregat + display_name
+
+GET/POST /api/v1/channels         X-Admin-Key         kelola channel
+PATCH/DELETE /api/v1/channels/{id} X-Admin-Key
+POST /api/v1/channels/{id}/sync   X-Admin-Key         Google Sheet → order
 ```
-Dokumentasi interaktif: `http://127.0.0.1:8000/docs`
+Docs interaktif: `http://127.0.0.1:8000/docs`
 
 ---
 
-## 6. File kunci
-- Backend logic: `raynor-hub-backend/app/main.py`
-- Bot: `../marketplace/RaynorHubBot.lua` (di folder Downloads/marketplace)
+## 7. File kunci
+- Backend: `raynor-hub-backend/app/main.py`, config di `app/core/config.py`
+- Bot: `raynor-hub-frontend/public/RaynorHubBot.lua` (disajikan `/files/loader.lua`)
 - Frontend API client: `raynor-hub-frontend/src/lib/api/backend.ts`
-- Sidebar: `raynor-hub-frontend/src/components/sidebar.tsx`
-- Halaman channel: `raynor-hub-frontend/src/app/(dashboard)/marketplace/[slug]/page.tsx`
+- Proxy ber-auth: `raynor-hub-frontend/src/app/api/backend/[...path]/route.ts`
+- Auth sesi: `raynor-hub-frontend/src/lib/auth.ts`, `src/middleware.ts`
+- Env: `.env.example` di kedua folder (yang asli `.env` / `.env.local`, gitignored)

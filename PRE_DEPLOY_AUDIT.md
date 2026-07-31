@@ -5,8 +5,8 @@ Diurutkan dari yang paling menghalangi deploy.
 
 Legenda: **[UJI]** = dibuktikan dengan tes · **[KODE]** = dari pembacaan kode
 
-> **Status 31 Juli 2026** — #1, #2, #3, #4, #5 sudah **DIPERBAIKI**.
-> Tersisa #4b (ganti kunci default) sebagai blocker terakhir sebelum deploy.
+> **Status 31 Juli 2026** — semua BLOCKER (#1–#5) sudah **DIPERBAIKI**.
+> Yang tersisa hanya kategori 🟠 SERIUS dan 🟡 PENTING di bawah.
 
 ---
 
@@ -59,15 +59,13 @@ setelah dicabut → 401. Ada test otomatisnya (`test_revoked_bot_token_is_reject
 pemegangnya bisa melapor `fulfilled` palsu sampai kamu mencabutnya. Verifikasi silang
 (bandingkan penurunan stok dengan snapshot heartbeat) bisa ditambahkan nanti.
 
----
+### 4b. ~~Kunci default masih nilai contoh~~ → SELESAI
+Semua kunci diganti nilai acak (`secrets.token_urlsafe`): admin key, registration key,
+session secret, password dashboard. Disimpan di `.env` / `.env.local` yang **gitignored**;
+`.env.example` berisi placeholder saja.
 
-## 🔴 BLOCKER — masih terbuka
-
-### 4b. Kunci default masih nilai contoh
-`dev-admin-key`, `dev-registration-key`, `changeme`, `dev-session-secret-change-me`
-— semuanya masih default dan sebagian sudah publik di repo.
-
-**Wajib** diganti dengan nilai acak panjang sebelum VPS menyentuh internet.
+**[UJI]** Kunci lama (`dev-admin-key`, `dev-registration-key`) → 401.
+Password lama (`changeme`) → 401. Kunci & password baru → 200. Proxy dashboard jalan.
 
 ---
 
@@ -199,7 +197,7 @@ Perlu nginx atau Caddy (TLS otomatis) + systemd agar backend hidup lagi setelah 
 2. ~~Keluarkan kunci dari browser (#2)~~ ✅
 3. ~~Auth admin untuk dashboard + endpoint baca (#1)~~ ✅
 4. ~~Keluarkan registration key dari script publik (#3, #4)~~ ✅
-5. **Ganti semua kunci default** (#4b) — **belum, ini yang tersisa**
+5. ~~Ganti semua kunci default (#4b)~~ ✅ — **semua blocker deploy sudah beres**
 
 **Sebelum menerima pembeli sungguhan:**
 5. Perbaiki auth bot O(n) (#6) — ini sudah lambat di 10 bot
