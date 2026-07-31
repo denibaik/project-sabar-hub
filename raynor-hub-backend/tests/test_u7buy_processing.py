@@ -16,6 +16,9 @@ from app.infrastructure.repositories.sqlalchemy_channel_repository import SqlAlc
 from app.infrastructure.repositories.sqlalchemy_order_repository import SqlAlchemyOrderRepository
 from app.infrastructure.repositories.sqlalchemy_webhook_repository import SqlAlchemyWebhookRepository
 import app.main as main
+from fastapi.testclient import TestClient
+
+client = TestClient(main.app)
 
 TROWEL_PID = "2066975692396105730"
 PEPPER_PID = "2066921934194675713"
@@ -313,3 +316,116 @@ def test_seed_pack_tidak_jatuh_ke_seeds():
 def test_kategori_yang_tak_bisa_ditentukan_dibiarkan_kosong():
     """Pet tidak punya kata kunci di namanya — lebih baik kosong daripada salah."""
     assert suggest("Unicorn | Grow A Garden 2 | Instant Delivery")["category"] == ""
+
+
+# ---- sinkron stok listing ----
+
+class KlienStok:
+    """Tiruan klien untuk rencana & penerapan stok."""
+
+    def __init__(self, offers, stock_sync_enabled=False):
+        self._offers = offers
+        self.stock_sync_enabled = stock_sync_enabled
+        self.ditulis = []
+
+    def find_business_id(self):
+        return "bisnis-1"
+
+    def all_offers(self, business_id, max_pages=20):
+        return self._offers
+
+    def set_offer_inventory(self, offer_id, inventory):
+        if not self.stock_sync_enabled:
+            return None
+        self.ditulis.append((offer_id, inventory))
+        return {}
+
+
+def _offer(pid, nama, stok, terjual=0):
+    return {"offerId": pid, "offerName": nama, "inventory": stok,
+            "saleNum": terjual, "onSale": 1, "entityName": "Grow a Garden 2"}
+
+
+def _skenario(per_unit=150, punya=0):
+    """Satu produk dengan nama item yang unik untuk tes ini.
+
+    Stok dijumlahkan dari SELURUH bot online, termasuk sisa modul tes lain.
+    Nama unik membuat hasilnya pasti tanpa bergantung pada urutan modul.
+    """
+    tag = uuid4().hex[:8]
+    pid, item = f"pid{tag}", f"TrowelUji{tag}"
+    _channel({pid: {"category": "Trowels", "item_key": item, "per_unit": per_unit}})
+
+    nama = f"botstok{tag}"
+    r = client.post("/api/v1/bots", headers={"X-Registration-Key": "test-registration-key"},
+                    json={"name": "Stok Bot", "username": nama, "game": "Grow a Garden"})
+    token = r.json()["token"]
+    client.post("/api/v1/bots/heartbeat", headers={"Authorization": f"Bearer {token}"},
+                json={"server": "SG", "ping_ms": 1,
+                      "inventory": {"Trowels": {item: punya}}, "names": {}})
+    return pid
+
+
+def _rencana():
+    db = SessionLocal()
+    try:
+        return main.u7buy_stock_plan(db)
+    finally:
+        db.close()
+
+
+def test_rencana_membandingkan_stok_listing_dengan_stok_bot(pasang):
+    """Angka di marketplace adalah yang diketik penjual, bukan yang benar-benar ada."""
+    pid = _skenario(per_unit=150, punya=1500)
+    pasang(KlienStok([_offer(pid, "150x Trowel", 4, terjual=7)]))
+
+    r = _rencana()["items"][0]
+    assert r["bot_stock"] == 1500
+    assert r["should_be"] == 10          # 1500 / 150 per unit
+    assert r["action"] == "naikkan"
+
+
+def test_stok_habis_ditandai_paling_mendesak(pasang):
+    """Listing yang menjual barang yang tak ada sama sekali."""
+    pid = _skenario(per_unit=1, punya=0)
+    pasang(KlienStok([_offer(pid, "Ghost Pepper Seed", 18, terjual=55)]))
+
+    hasil = _rencana()
+    assert hasil["items"][0]["should_be"] == 0
+    assert hasil["items"][0]["action"] == "kosongkan"
+    assert hasil["mismatched"] == 1
+    assert hasil["can_apply"] is False
+
+
+def test_pembulatan_ke_bawah_tidak_menjanjikan_unit_yang_tak_utuh(pasang):
+    """149 trowel bukan 1 unit "150x Trowel" — menjualnya berarti gagal."""
+    pid = _skenario(per_unit=150, punya=149)
+    pasang(KlienStok([_offer(pid, "150x Trowel", 1)]))
+    assert _rencana()["items"][0]["should_be"] == 0
+
+
+def test_penerapan_ditolak_saat_belum_dinyalakan(pasang):
+    """Pengaman utama: listing memuat harga dan deskripsi yang tak boleh rusak."""
+    pid = _skenario(per_unit=150, punya=300)
+    klien = pasang(KlienStok([_offer(pid, "150x Trowel", 1)]))
+
+    r = client.post("/api/v1/u7buy/stock-sync", headers={"X-Admin-Key": "test-admin-key"})
+    assert r.status_code == 409
+    assert klien.ditulis == []          # tak satu pun listing disentuh
+
+
+def test_penerapan_menulis_saat_dinyalakan(pasang, monkeypatch):
+    pid = _skenario(per_unit=150, punya=300)
+    monkeypatch.setattr(settings, "u7buy_stock_sync_enabled", True)
+    klien = pasang(KlienStok([_offer(pid, "150x Trowel", 1)], stock_sync_enabled=True))
+
+    r = client.post("/api/v1/u7buy/stock-sync", headers={"X-Admin-Key": "test-admin-key"})
+    assert r.status_code == 200
+    assert klien.ditulis == [(pid, 2)]     # 300 / 150 = 2 unit
+
+
+def test_listing_belum_dipetakan_tidak_disentuh(pasang):
+    """Sinkron stok hanya mengurus produk yang kita tahu isinya apa."""
+    _skenario(per_unit=1, punya=5)
+    pasang(KlienStok([_offer("produk-asing", "Sesuatu", 99)]))
+    assert _rencana()["items"] == []

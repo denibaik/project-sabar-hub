@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     u7buy_callback_enabled: bool = False
     # Selang pemrosesan event webhook yang tertunda. 0 = matikan.
     u7buy_process_interval_seconds: int = 60
+    # Menulis ulang stok listing di U7Buy agar sesuai stok bot.
+    # MATI secara default. Dokumentasi U7Buy tidak merinci isi body PUT-nya,
+    # sehingga penulisannya dilakukan dengan menyalin balik objek offer yang
+    # baru dibaca — hanya `inventory` yang diubah. Uji pada satu listing dulu.
+    u7buy_stock_sync_enabled: bool = False
 
     # --- Penangkap webhook generik (mis. notifikasi Discord dari VCGamers) ---
     # Rahasia ini menjadi bagian URL. Pengirim seperti webhook Discord tidak bisa

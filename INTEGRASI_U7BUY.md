@@ -206,6 +206,30 @@ tidak ada pula yang hilang diam-diam.
 **Pemetaan produk disimpan di `config` channel U7Buy**, bukan di berkas setelan,
 sehingga dapat diubah tanpa menyalakan ulang backend.
 
+### ✅ Sinkron stok listing
+
+Angka stok di marketplace adalah yang DIKETIK penjual. Selisihnya terhadap stok
+bot baru ketahuan saat ada yang membeli — dan saat itu pembeli sudah membayar.
+Per 31 Juli: Ghost Pepper terjual 55× dengan stok bot **nol**.
+
+`GET /api/v1/u7buy/stock-plan` membandingkan keduanya. HANYA MEMBACA.
+
+```
+unit yang sanggup dijual = stok bot / per_unit   (dibulatkan ke bawah)
+```
+
+Pembulatan ke bawah disengaja: 149 trowel bukan satu unit "150x Trowel", dan
+menjualnya sama saja dengan menjanjikan kegagalan.
+
+`POST /api/v1/u7buy/stock-sync` menuliskannya, dan **ditolak** kecuali
+`U7BUY_STOCK_SYNC_ENABLED` dinyalakan.
+
+⚠️ Body `PUT /open-api/game_service_offer` **tidak terdokumentasi**, sedangkan
+objek offer memuat harga dan deskripsi. Karena itu penulisan dilakukan dengan
+membaca offer lebih dulu lalu mengirimnya balik apa adanya, hanya `inventory`
+yang diubah — field lain tak tersentuh karena nilainya berasal dari server
+sendiri. Tetap **uji pada satu listing bernilai rendah** sebelum dipercaya.
+
 #### ⚠️ Callback ke U7Buy mati secara default
 
 `U7BUY_CALLBACK_ENABLED=false` berarti `start_deliery` dan `complete_deliery`

@@ -23,11 +23,13 @@ class U7BuyError(RuntimeError):
 
 class U7BuyClient:
     def __init__(self, app_id: str, app_secret: str, base_url: str,
-                 callback_enabled: bool = False, timeout: int = 20, opener=None):
+                 callback_enabled: bool = False, stock_sync_enabled: bool = False,
+                 timeout: int = 20, opener=None):
         self.app_id = app_id
         self.app_secret = app_secret
         self.base_url = base_url.rstrip("/")
         self.callback_enabled = callback_enabled
+        self.stock_sync_enabled = stock_sync_enabled
         self.timeout = timeout
         self._opener = opener or self._http
 
@@ -104,6 +106,36 @@ class U7BuyClient:
             if len(keluar) >= int(data.get("totalCount") or 0):
                 break
         return keluar
+
+    def get_offer(self, offer_id: str) -> dict:
+        return self._call(f"/open-api/game_service_offer/{offer_id}")
+
+    def set_offer_inventory(self, offer_id: str, inventory: int) -> dict | None:
+        """Ubah stok satu listing. None bila sinkron stok belum dinyalakan.
+
+        Dokumentasi U7Buy tidak merinci isi body PUT-nya, sedangkan objek offer
+        memuat harga dan deskripsi. Mengirim body susunan sendiri berisiko
+        mengosongkan field yang tidak disertakan.
+
+        Karena itu offer dibaca lebih dulu, lalu dikirim balik APA ADANYA dengan
+        satu perubahan: `inventory`. Field lain tak tersentuh karena nilainya
+        berasal dari server itu sendiri.
+        """
+        if not self.stock_sync_enabled:
+            print(f"[u7buy] ubah stok offer {offer_id} -> {inventory} DILEWATI "
+                  f"(U7BUY_STOCK_SYNC_ENABLED belum dinyalakan)")
+            return None
+
+        sekarang = self.get_offer(offer_id)
+        if int(sekarang.get("inventory") or 0) == inventory:
+            return None  # sudah sesuai, jangan kirim permintaan sia-sia
+
+        body = dict(sekarang)
+        body["inventory"] = inventory
+        hasil = self._call("/open-api/game_service_offer", method="PUT", body=body)
+        print(f"[u7buy] stok offer {offer_id}: "
+              f"{sekarang.get('inventory')} -> {inventory}")
+        return hasil
 
     def get_buyer_username(self, order_id: str) -> str | None:
         """Username Roblox pembeli, dari parameter pengiriman.

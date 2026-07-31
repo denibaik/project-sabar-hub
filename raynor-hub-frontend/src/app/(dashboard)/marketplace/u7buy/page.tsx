@@ -1,20 +1,27 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Download, Plug, Plus, RefreshCw, Save, Store, Trash2 } from "lucide-react"
+import { Download, Plug, Plus, RefreshCw, Save, Scale, Store, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   backend, relativeTime,
-  type BackendChannel, type U7BuyProduct, type WebhookEvent,
+  type BackendChannel, type U7BuyProduct, type U7BuyStockPlan, type WebhookEvent,
 } from "@/lib/api/backend"
 
 /** Satu baris peta, dengan productId dibawa serta agar bisa diedit. */
 type Baris = U7BuyProduct & { productId: string }
 
 const BARIS_KOSONG: Baris = { productId: "", category: "", item_key: "", per_unit: 1 }
+
+const gayaAksi: Record<string, string> = {
+  sesuai:    "border-slate-600 bg-slate-800/70 text-slate-500",
+  naikkan:   "border-sky-500/20 bg-sky-500/10 text-sky-300",
+  turunkan:  "border-amber-500/20 bg-amber-500/10 text-amber-300",
+  kosongkan: "border-rose-500/20 bg-rose-500/10 text-rose-300",
+}
 
 const gayaStatus: Record<string, string> = {
   processed: "border-emerald-500/20 bg-emerald-500/10 text-emerald-300",
@@ -50,6 +57,7 @@ export default function U7BuyPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [pesan, setPesan] = useState<string | null>(null)
+  const [rencana, setRencana] = useState<U7BuyStockPlan | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -139,6 +147,22 @@ export default function U7BuyPage() {
       (perlu ? ` ${perlu} belum bisa ditebak kategorinya — isi sendiri sebelum menyimpan.` : "") +
       " Belum tersimpan sampai kamu menekan Simpan."
     )
+  })
+
+  const periksaStok = () => run("stock", async () => {
+    const p = await backend.u7buyStockPlan()
+    setRencana(p)
+    setPesan(p.mismatched === 0
+      ? "Semua listing sudah sesuai dengan stok bot."
+      : `${p.mismatched} dari ${p.total} listing tidak sesuai. Belum ada yang diubah.`)
+  })
+
+  const terapkanStok = () => run("apply", async () => {
+    if (!window.confirm("Tulis stok bot ke listing U7Buy? Ini mengubah listing sungguhan.")) return
+    const h = await backend.u7buyStockSync()
+    setPesan(`${h.updated} listing diperbarui.` +
+      (h.failed.length ? ` ${h.failed.length} gagal — lihat log backend.` : ""))
+    setRencana(await backend.u7buyStockPlan())
   })
 
   const ubah = (i: number, patch: Partial<Baris>) =>
@@ -257,6 +281,96 @@ export default function U7BuyPage() {
                 pembeli menerima 1 dari 150 yang dibayarnya.
               </p>
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ---- perbandingan stok ---- */}
+      <Card className="border-white/10 bg-slate-950/60">
+        <CardHeader className="flex-row items-start justify-between space-y-0">
+          <div>
+            <CardTitle className="text-base text-white">Stok listing vs stok bot</CardTitle>
+            <CardDescription className="text-slate-500">
+              Angka stok di U7Buy adalah yang <span className="text-slate-300">kamu ketik</span>,
+              bukan yang benar-benar dipegang bot. Selisihnya baru ketahuan saat ada
+              yang membeli — dan saat itu pembeli sudah membayar.
+            </CardDescription>
+          </div>
+          <Button onClick={periksaStok} disabled={busy !== null || !channel}
+            variant="outline" className="border-white/10 bg-white/[0.03] text-slate-300">
+            <Scale className={`mr-2 h-4 w-4 ${busy === "stock" ? "animate-pulse" : ""}`} />
+            {busy === "stock" ? "Memeriksa…" : "Periksa stok"}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {!rencana ? (
+            <p className="py-2 text-xs text-slate-600">
+              Tekan &quot;Periksa stok&quot; untuk membandingkan. Hanya membaca — tidak ada
+              yang diubah di marketplace.
+            </p>
+          ) : rencana.items.length === 0 ? (
+            <p className="py-2 text-xs text-slate-600">
+              Belum ada listing yang terpetakan untuk dibandingkan.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[520px] text-xs">
+                  <thead className="text-[11px] uppercase tracking-wide text-slate-600">
+                    <tr className="border-b border-white/5">
+                      <th className="py-2 text-left font-medium">Listing</th>
+                      <th className="py-2 text-right font-medium">Stok bot</th>
+                      <th className="py-2 text-right font-medium">Tertulis</th>
+                      <th className="py-2 text-right font-medium">Seharusnya</th>
+                      <th className="py-2 text-right font-medium">Terjual</th>
+                    </tr>
+                  </thead>
+                  <tbody className="tabular-nums">
+                    {rencana.items.map((r) => (
+                      <tr key={r.product_id} className="border-b border-white/5 last:border-0">
+                        <td className="py-2 pr-3">
+                          <span className="text-slate-200">{r.name.split("|")[0].trim()}</span>
+                          <Badge variant="outline" className={`ml-2 ${gayaAksi[r.action]}`}>
+                            {r.action}
+                          </Badge>
+                          {r.per_unit > 1 && (
+                            <span className="ml-2 text-slate-600">{r.per_unit}/unit</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-right text-slate-400">{r.bot_stock}</td>
+                        <td className="py-2 text-right text-slate-400">{r.listed}</td>
+                        <td className={`py-2 text-right ${r.action === "sesuai" ? "text-slate-400" : "text-white"}`}>
+                          {r.should_be}
+                        </td>
+                        <td className="py-2 text-right text-slate-600">{r.sold ?? "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {rencana.mismatched === 0 ? (
+                <p className="pt-1 text-xs text-emerald-400/80">Semua listing sudah sesuai.</p>
+              ) : rencana.can_apply ? (
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <Button onClick={terapkanStok} disabled={busy !== null}
+                    className="bg-emerald-600 text-white hover:bg-emerald-500">
+                    <Scale className="mr-2 h-4 w-4" />
+                    {busy === "apply" ? "Menerapkan…" : `Terapkan ke ${rencana.mismatched} listing`}
+                  </Button>
+                  <span className="text-xs text-amber-400/80">
+                    Ini mengubah listing sungguhan di U7Buy.
+                  </span>
+                </div>
+              ) : (
+                <p className="pt-1 text-xs text-amber-400/80">
+                  {rencana.mismatched} listing tidak sesuai. Penerapan otomatis masih mati —
+                  nyalakan <code className="text-slate-400">U7BUY_STOCK_SYNC_ENABLED</code> di
+                  <code className="text-slate-400"> .env</code> backend lalu restart. Sampai itu,
+                  perbaiki sendiri di portal U7Buy memakai kolom &quot;Seharusnya&quot;.
+                </p>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>

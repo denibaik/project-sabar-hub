@@ -101,6 +101,32 @@ export interface U7BuyOffer {
   per_unit: number
 }
 
+/** Satu baris perbandingan stok listing vs stok bot. */
+export interface U7BuyStockRow {
+  product_id: string
+  name: string
+  category: string
+  item_key: string
+  per_unit: number
+  /** jumlah item yang benar-benar dipegang bot online */
+  bot_stock: number
+  /** angka stok yang sekarang tertulis di listing */
+  listed: number
+  /** unit yang sanggup dipenuhi = bot_stock / per_unit, dibulatkan ke bawah */
+  should_be: number
+  action: "sesuai" | "naikkan" | "turunkan" | "kosongkan"
+  sold: number | null
+  on_sale: boolean
+}
+
+export interface U7BuyStockPlan {
+  items: U7BuyStockRow[]
+  total: number
+  mismatched: number
+  /** false = penerapan ditolak backend; nyalakan U7BUY_STOCK_SYNC_ENABLED */
+  can_apply: boolean
+}
+
 export interface SyncResult {
   imported: number
   skipped: number
@@ -209,6 +235,16 @@ export const backend = {
     const r = await fetch(`${API_BASE}/api/v1/u7buy/offers`, { cache: "no-store" })
     const d = await unwrap<{ items: U7BuyOffer[]; total: number }>(r)
     return d.items
+  },
+
+  async u7buyStockPlan(): Promise<U7BuyStockPlan> {
+    const r = await fetch(`${API_BASE}/api/v1/u7buy/stock-plan`, { cache: "no-store" })
+    return unwrap<U7BuyStockPlan>(r)
+  },
+
+  async u7buyStockSync(): Promise<{ updated: number; changes: unknown[]; failed: unknown[] }> {
+    const r = await fetch(`${API_BASE}/api/v1/u7buy/stock-sync`, { method: "POST" })
+    return unwrap<{ updated: number; changes: unknown[]; failed: unknown[] }>(r)
   },
 
   async listWebhookEvents(): Promise<WebhookEvent[]> {

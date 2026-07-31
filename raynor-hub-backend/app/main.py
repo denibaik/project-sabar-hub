@@ -740,6 +740,7 @@ def u7buy_client() -> U7BuyClient:
     return U7BuyClient(
         settings.u7buy_app_id, settings.u7buy_app_secret, settings.u7buy_base_url,
         callback_enabled=settings.u7buy_callback_enabled,
+        stock_sync_enabled=settings.u7buy_stock_sync_enabled,
     )
 
 
@@ -894,6 +895,124 @@ def list_u7buy_offers(db: Session = Depends(get_db)):
         })
     return {"items": items, "total": len(items),
             "game": settings.u7buy_game_name, "skipped_other_games": lain}
+
+
+def stok_tersedia(db: Session, category: str, item_key: str) -> int:
+    """Jumlah item ini yang dipegang seluruh bot ONLINE.
+
+    Memakai pencocokan yang sama dengan routing order, jadi angka di sini tidak
+    akan berbeda dari yang menentukan sebuah order bisa dipenuhi atau tidak.
+    """
+    bot_repo = SqlAlchemyBotRepository(db)
+    inv_repo = SqlAlchemyBotInventoryRepository(db)
+    total = 0
+    for bot in bot_repo.list():
+        if not bot_is_online(bot):
+            continue
+        total += owned_count(inv_repo.get(bot.id) or {}, inv_repo.get_names(bot.id) or {},
+                             category, item_key)
+    return total
+
+
+@app.get("/api/v1/u7buy/stock-plan", dependencies=[Depends(require_admin)])
+def u7buy_stock_plan(db: Session = Depends(get_db)):
+    """Bandingkan stok listing U7Buy dengan stok bot yang sesungguhnya.
+
+    Angka stok di marketplace adalah yang DIKETIK penjual, bukan yang benar-benar
+    dipegang bot. Selisihnya baru ketahuan saat ada yang membeli lalu ordernya
+    gagal — pembeli sudah membayar dan menunggu.
+
+    HANYA MEMBACA. Tidak ada yang diubah di marketplace.
+    """
+    if not (settings.u7buy_app_id and settings.u7buy_app_secret):
+        raise HTTPException(status_code=400, detail="Kredensial U7Buy belum diisi di .env")
+
+    peta = u7buy_product_map(db)
+    if not peta:
+        raise HTTPException(status_code=400,
+                            detail="Peta produk masih kosong — isi dulu di halaman ini")
+
+    klien = u7buy_client()
+    try:
+        business_id = klien.find_business_id()
+        offers = klien.all_offers(business_id) if business_id else []
+    except U7BuyError as e:
+        raise HTTPException(status_code=502, detail=f"U7Buy: {e}")
+
+    rencana = []
+    for o in offers:
+        pid = str(o.get("offerId") or "")
+        entri = peta.get(pid)
+        if not entri:
+            continue  # belum dipetakan — bukan urusan sinkron stok
+
+        per_unit = max(1, int(entri.get("per_unit") or 1))
+        punya = stok_tersedia(db, str(entri["category"]), str(entri["item_key"]))
+        # Satu unit yang dibeli = `per_unit` buah item. Pembulatan ke bawah:
+        # menjual unit yang tak bisa dipenuhi utuh sama saja dengan gagal.
+        sanggup = punya // per_unit
+        terdaftar = int(o.get("inventory") or 0)
+
+        if sanggup == terdaftar:
+            aksi = "sesuai"
+        elif sanggup == 0:
+            aksi = "kosongkan"   # paling mendesak: listing menjual yang tak ada
+        elif sanggup < terdaftar:
+            aksi = "turunkan"
+        else:
+            aksi = "naikkan"
+
+        rencana.append({
+            "product_id": pid,
+            "name": o.get("offerName") or "",
+            "on_sale": bool(o.get("onSale")),
+            "sold": o.get("saleNum"),
+            "category": entri["category"], "item_key": entri["item_key"],
+            "per_unit": per_unit,
+            "bot_stock": punya,
+            "listed": terdaftar,
+            "should_be": sanggup,
+            "action": aksi,
+        })
+
+    rencana.sort(key=lambda r: (r["action"] == "sesuai", -(r["sold"] or 0)))
+    return {
+        "items": rencana,
+        "total": len(rencana),
+        "mismatched": sum(1 for r in rencana if r["action"] != "sesuai"),
+        "can_apply": settings.u7buy_stock_sync_enabled,
+    }
+
+
+@app.post("/api/v1/u7buy/stock-sync", dependencies=[Depends(require_admin)])
+def u7buy_stock_sync(db: Session = Depends(get_db)):
+    """Tulis stok bot ke listing U7Buy.
+
+    MENGUBAH LISTING SUNGGUHAN. Ditolak kecuali `U7BUY_STOCK_SYNC_ENABLED`
+    dinyalakan — sengaja, karena listing memuat harga dan deskripsi yang tidak
+    boleh rusak. Lihat dulu hasilnya lewat `/stock-plan` sebelum menerapkan.
+    """
+    if not settings.u7buy_stock_sync_enabled:
+        raise HTTPException(
+            status_code=409,
+            detail="U7BUY_STOCK_SYNC_ENABLED belum dinyalakan. Periksa dulu "
+                   "rencananya, lalu nyalakan di .env dan restart backend.")
+
+    rencana = u7buy_stock_plan(db)
+    klien = u7buy_client()
+    diubah, gagal = [], []
+    for r in rencana["items"]:
+        if r["action"] == "sesuai":
+            continue
+        try:
+            klien.set_offer_inventory(r["product_id"], r["should_be"])
+            diubah.append({"name": r["name"], "dari": r["listed"], "jadi": r["should_be"]})
+        except U7BuyError as e:
+            # Satu listing gagal tidak boleh menghentikan sisanya — justru
+            # listing lain yang belum tersinkron makin berbahaya.
+            gagal.append({"name": r["name"], "error": str(e)})
+
+    return {"updated": len(diubah), "changes": diubah, "failed": gagal}
 
 
 def notify_u7buy_complete(order: Order) -> None:
