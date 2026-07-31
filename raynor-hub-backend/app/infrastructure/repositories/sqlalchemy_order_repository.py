@@ -104,3 +104,9 @@ class SqlAlchemyBotInventoryRepository:
     def get_names(self, bot_id: UUID) -> dict:
         row = self.db.get(BotInventoryModel, bot_id)
         return self._split(row.inventory if row else None)[1]
+
+    def delete(self, bot_id: UUID) -> None:
+        row = self.db.get(BotInventoryModel, bot_id)
+        if row:
+            self.db.delete(row)
+            self.db.commit()

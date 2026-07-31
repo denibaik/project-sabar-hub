@@ -1,22 +1,28 @@
 --[[
   RaynorHubBot.lua — bot fulfillment untuk backend ASLI project-sabar-hub (FastAPI).
   Alur penuh:
-    register (X-Registration-Key) → simpan token → heartbeat+inventory (Bearer)
-    → claim order (routing stok di server) → verifikasi penerima → cek stok
-    → Mailbox.SendBatch → verifikasi inventory turun → result.
+    baca BOT_TOKEN → heartbeat+inventory (Bearer) → claim order (routing stok
+    di server) → verifikasi penerima → cek stok → Mailbox.SendBatch
+    → verifikasi inventory turun → result.
 
-  Endpoint yang dipakai (semua di CONFIG.BASE_URL):
-    POST /api/v1/bots            (X-Registration-Key)   register
-    POST /api/v1/bots/heartbeat  (Bearer)               heartbeat + inventory
-    POST /api/v1/bots/claim      (Bearer)               ambil 1 order yg bot ini bisa penuhi
-    POST /api/v1/bots/result     (Bearer)               lapor hasil
+  Endpoint yang dipakai (semua di CONFIG.BASE_URL, semua pakai Bearer token):
+    POST /api/v1/bots/heartbeat   heartbeat + inventory
+    POST /api/v1/bots/claim       ambil 1 order yg bot ini bisa penuhi
+    POST /api/v1/bots/result      lapor hasil
 
   === EDIT KONFIG ===
 ]]
 
+-- ============================================================
+--  TOKEN BOT — WAJIB. Set SEBELUM memanggil loader:
+--      getgenv().BOT_TOKEN = "sbr_bot_xxxxx"
+--      loadstring(...)()
+--  Token dibuat di dashboard: Bot Network → Register Bot.
+--  Script ini TIDAK lagi memuat registration key, jadi aman dipublikasikan.
+-- ============================================================
+
 local CONFIG = {
-    BASE_URL         = "https://cdna-gain-washing-gravity.trycloudflare.com",  -- backend via Cloudflare Tunnel
-    REGISTRATION_KEY = "dev-registration-key",    -- = settings.bot_registration_key
+    BASE_URL         = "http://127.0.0.1:8000",   -- ganti ke domain VPS saat deploy
     BOT_NAME         = "",                          -- kosong = pakai username akun
     GAME             = "Grow a Garden",
     HEARTBEAT        = 15,     -- detik antar heartbeat
@@ -120,25 +126,32 @@ local function resolveRecipient(username)
 end
 
 --============================ TOKEN ============================
-local function readToken()
-    if isfile and isfile(TOKEN_FILE) and readfile then
-        local ok, t = pcall(readfile, TOKEN_FILE); if ok and t and t ~= "" then return t end
-    end
-    return genv["__RHTOKEN_" .. USERNAME]
-end
+-- Urutan pencarian token: getgenv().BOT_TOKEN → file tersimpan.
+-- Tidak ada pendaftaran otomatis: token harus dibuat admin di dashboard.
 local function saveToken(tok)
     genv["__RHTOKEN_" .. USERNAME] = tok
     if writefile then pcall(writefile, TOKEN_FILE, tok) end
 end
-local function registerBot()
-    log("Mendaftar ke backend...")
-    local code, dec, raw = apiCall("POST", "/api/v1/bots",
-        { name = BOT_NAME, username = USERNAME, game = CONFIG.GAME },
-        { ["X-Registration-Key"] = CONFIG.REGISTRATION_KEY })
-    if code == 201 and dec and dec.token then saveToken(dec.token); log("Terdaftar ✓"); return dec.token end
-    if code == 409 then log("⚠ Username sudah terdaftar tapi token lokal hilang. Hapus bot itu di backend / tempel token ke " .. TOKEN_FILE); return nil end
-    if code == 401 then log("❌ X-Registration-Key salah."); return nil end
-    log("❌ Gagal daftar: http " .. tostring(code) .. " " .. tostring(raw):sub(1, 120)); return nil
+
+local function readToken()
+    local t = genv.BOT_TOKEN
+    if type(t) == "string" and t ~= "" then
+        saveToken(t)   -- ingat, agar run berikutnya tak perlu set ulang
+        return t
+    end
+    if isfile and isfile(TOKEN_FILE) and readfile then
+        local ok, saved = pcall(readfile, TOKEN_FILE)
+        if ok and saved and saved ~= "" then return saved end
+    end
+    return genv["__RHTOKEN_" .. USERNAME]
+end
+
+local function tokenHelp()
+    log("❌ BOT_TOKEN belum diisi.")
+    log("   1) Buka dashboard → Bot Network → Register Bot → salin token")
+    log("   2) Jalankan seperti ini:")
+    log('        getgenv().BOT_TOKEN = "sbr_bot_xxxxx"')
+    log("        loadstring(...)()")
 end
 
 --============================ FULFILL ============================
@@ -191,8 +204,8 @@ local function processOrder(order)
 end
 
 --============================ RUN ============================
-local token = readToken() or registerBot()
-if not token then log("Berhenti — tak ada token valid."); return end
+local token = readToken()
+if not token then tokenHelp(); return end
 local function authH() return { ["Authorization"] = "Bearer " .. token } end
 
 -- heartbeat loop (dengan inventory utk routing)
@@ -201,7 +214,7 @@ task.spawn(function()
         local inv, nm = snapshotInventory()
         local code = apiCall("POST", "/api/v1/bots/heartbeat",
             { server = tostring(game.JobId), ping_ms = 0, inventory = inv, names = nm }, authH())
-        if code == 401 then saveToken(""); token = registerBot(); if not token then break end end
+        if code == 401 then saveToken(""); log("❌ Token ditolak/dicabut. Ambil token baru di dashboard."); break end
         task.wait(CONFIG.HEARTBEAT)
     end
 end)
@@ -218,7 +231,7 @@ while stillMe() do
         log(("  → %s (%s/%s) [report http %s]"):format(res.status, tostring(res.sent_total), tostring(res.requested_total), tostring(rc)))
         task.wait(CONFIG.ORDER_GAP)
     elseif code == 401 then
-        saveToken(""); token = registerBot(); if not token then break end
+        saveToken(""); log("❌ Token ditolak/dicabut. Ambil token baru di dashboard."); break
     else
         task.wait(CONFIG.POLL_INTERVAL)  -- 204/none atau error → tunggu
     end

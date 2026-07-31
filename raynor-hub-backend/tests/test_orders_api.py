@@ -8,6 +8,7 @@ from app.main import app
 
 client = TestClient(app)
 REG = {"X-Registration-Key": "dev-registration-key"}
+ADMIN = {"X-Admin-Key": "dev-admin-key"}
 
 
 def _register(inventory=None):
@@ -24,7 +25,7 @@ def _register(inventory=None):
 def test_full_flow_stocked_bot_fulfills():
     _, token = _register(inventory={"Sprinklers": {"Super Sprinkler": 5}})
     # buat order
-    r = client.post("/api/v1/orders", headers=REG, json={
+    r = client.post("/api/v1/orders", headers=ADMIN, json={
         "recipient": "buyerX",
         "items": [{"category": "Sprinklers", "item_key": "Super Sprinkler", "count": 2}],
     })
@@ -47,7 +48,7 @@ def test_full_flow_stocked_bot_fulfills():
 
 def test_routing_empty_bot_gets_204():
     # order butuh item langka
-    r = client.post("/api/v1/orders", headers=REG, json={
+    r = client.post("/api/v1/orders", headers=ADMIN, json={
         "recipient": "buyerY",
         "items": [{"category": "WateringCans", "item_key": "Legendary Watering Can", "count": 1}],
     })
@@ -60,7 +61,7 @@ def test_routing_empty_bot_gets_204():
 
 def test_released_returns_to_pending():
     _, token = _register(inventory={"Seeds": {"Carrot": 10}})
-    r = client.post("/api/v1/orders", headers=REG, json={
+    r = client.post("/api/v1/orders", headers=ADMIN, json={
         "recipient": "buyerZ",
         "items": [{"category": "Seeds", "item_key": "Carrot", "count": 3}],
     })
@@ -74,3 +75,25 @@ def test_released_returns_to_pending():
     assert res.status_code == 200
     assert res.json()["status"] == "pending"
     assert res.json()["assigned_bot"] is None
+
+
+def test_revoked_bot_token_is_rejected():
+    """Cabut bot → token-nya harus langsung tak berlaku."""
+    username = "RevokeBot_" + uuid4().hex[:8]
+    r = client.post("/api/v1/bots", headers=REG,
+                    json={"name": "Revoke Bot", "username": username, "game": "Grow a Garden"})
+    assert r.status_code == 201, r.text
+    bot_id, token = r.json()["bot"]["id"], r.json()["token"]
+    auth = {"Authorization": f"Bearer {token}"}
+
+    # token berlaku sebelum dicabut
+    assert client.post("/api/v1/bots/heartbeat", headers=auth,
+                       json={"server": "x", "ping_ms": 0, "inventory": {}}).status_code == 200
+
+    # cabut butuh admin key
+    assert client.delete(f"/api/v1/bots/{bot_id}").status_code == 401
+    assert client.delete(f"/api/v1/bots/{bot_id}", headers=ADMIN).status_code == 204
+
+    # token lama ditolak
+    assert client.post("/api/v1/bots/heartbeat", headers=auth,
+                       json={"server": "x", "ping_ms": 0, "inventory": {}}).status_code == 401

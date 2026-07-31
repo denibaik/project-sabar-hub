@@ -15,6 +15,9 @@ const statusStyle: Record<string, string> = {
 }
 const statusLabel: Record<string, string> = { online: "Online", offline: "Offline", maintenance: "Maintenance" }
 
+const LOADER_URL = process.env.NEXT_PUBLIC_LOADER_URL || "http://127.0.0.1:8000/files/loader.lua"
+const LOADER_SNIPPET = `local u="${LOADER_URL}";local ok,s=pcall(function() return game:HttpGet(u) end);loadstring(ok and s or (request or http_request)({Url=u,Method="GET"}).Body)()`
+
 export default function BotsPage() {
   const [bots, setBots] = useState<BackendBot[]>([])
   const [loading, setLoading] = useState(true)
@@ -87,7 +90,20 @@ export default function BotsPage() {
             </div>
             <Button onClick={registerBot} disabled={!name.trim() || !username.trim()} className="bg-indigo-600 hover:bg-indigo-500"><KeyRound className="mr-2 h-4 w-4" />Generate Bot Token</Button>
             {regError && <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{regError}</p>}
-            {generatedToken && <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-4"><p className="text-xs font-medium text-amber-200">Token dibuat — tampilkan hanya sekali</p><code className="mt-2 block break-all rounded-lg bg-slate-950 p-3 text-sm text-amber-300">{generatedToken}</code><p className="mt-2 text-xs text-slate-500">Pasang token ini di script bot (atau biarkan RaynorHubBot.lua auto-register). Bot online setelah heartbeat pertama.</p></div>}
+            {generatedToken && (
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
+                <p className="text-xs font-medium text-amber-200">Token dibuat — hanya ditampilkan sekali</p>
+                <code className="mt-2 block break-all rounded-lg bg-slate-950 p-3 text-sm text-amber-300">{generatedToken}</code>
+                <p className="mt-3 text-xs text-slate-400">Jalankan ini di executor akun bot:</p>
+                <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-950 p-3 text-[11px] leading-5 text-emerald-300"><code>{`getgenv().BOT_TOKEN = "${generatedToken}"\n${LOADER_SNIPPET}`}</code></pre>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(`getgenv().BOT_TOKEN = "${generatedToken}"\n${LOADER_SNIPPET}`).catch(() => {})}
+                  className="mt-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.06]"
+                >Salin perintah</button>
+                <p className="mt-2 text-xs text-slate-500">Simpan token ini — tidak bisa dilihat lagi. Kalau bocor, cabut bot-nya lalu daftar ulang.</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -117,6 +133,14 @@ export default function BotsPage() {
                   <Metric icon={Clock3} label="Heartbeat" value={relativeTime(bot.last_heartbeat_at)} />
                 </div>
                 <div className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] p-3 text-sm text-slate-300">{connected ? <CheckCircle2 className="h-4 w-4 text-emerald-300" /> : <WifiOff className="h-4 w-4 text-rose-300" />}{connected ? "Online — siap menerima order" : "Offline — tidak ada heartbeat"}</div>
+                <Button
+                  variant="outline" size="sm"
+                  onClick={async () => {
+                    if (!window.confirm(`Cabut bot @${bot.username}? Token-nya langsung tidak berlaku dan bot berhenti bekerja.`)) return
+                    try { await backend.deleteBot(bot.id); load() } catch (e) { setErr((e as Error).message) }
+                  }}
+                  className="w-full border-rose-500/20 bg-rose-500/[0.06] text-rose-300 hover:bg-rose-500/[0.12]"
+                >Cabut token &amp; hapus bot</Button>
               </CardContent>
             </Card>
           )

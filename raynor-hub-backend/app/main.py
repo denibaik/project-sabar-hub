@@ -113,6 +113,15 @@ def list_bots(db: Session = Depends(get_db)):
 
 # ============================ ORDERS / AUTO-SEND ============================
 
+@app.delete("/api/v1/bots/{bot_id}", status_code=204, dependencies=[Depends(require_admin)])
+def delete_bot(bot_id: UUID, db: Session = Depends(get_db)):
+    """Cabut bot: token-nya langsung tak berlaku. Dipakai kalau token bocor."""
+    SqlAlchemyBotInventoryRepository(db).delete(bot_id)
+    if not SqlAlchemyBotRepository(db).delete(bot_id):
+        raise HTTPException(status_code=404, detail="Bot not found")
+    return None
+
+
 @app.post("/api/v1/orders", response_model=OrderResponse, status_code=201, dependencies=[Depends(require_admin)])
 def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)):
     items = [OrderItem(i.category, i.item_key, i.count) for i in payload.items]

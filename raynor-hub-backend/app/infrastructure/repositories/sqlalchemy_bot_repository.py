@@ -19,6 +19,10 @@ class SqlAlchemyBotRepository:
     def find_by_token_candidates(self):
         return [(self._to_entity(row), row.token_hash) for row in self.db.scalars(select(BotModel)).all()]
     def list(self): return [self._to_entity(row) for row in self.db.scalars(select(BotModel)).all()]
+    def delete(self, bot_id: UUID) -> bool:
+        row = self.db.get(BotModel, bot_id)
+        if not row: return False
+        self.db.delete(row); self.db.commit(); return True
     def save(self, bot: Bot) -> Bot:
         row = self.db.get(BotModel, bot.id)
         row.status, row.last_heartbeat_at, row.server, row.ping_ms, row.updated_at = bot.status.value, bot.last_heartbeat_at, bot.server, bot.ping_ms, datetime.now(timezone.utc)

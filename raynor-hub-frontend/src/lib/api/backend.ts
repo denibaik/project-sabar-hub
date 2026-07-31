@@ -79,6 +79,11 @@ export const backend = {
     return unwrap<{ bot: BackendBot; token: string }>(r)
   },
 
+  async deleteBot(id: string): Promise<void> {
+    const r = await fetch(`${API_BASE}/api/v1/bots/${id}`, { method: "DELETE" })
+    if (!r.ok && r.status !== 204) throw new Error(`HTTP ${r.status}`)
+  },
+
   async listOrders(): Promise<BackendOrder[]> {
     const r = await fetch(`${API_BASE}/api/v1/orders`, { cache: "no-store" })
     const d = await unwrap<{ items: BackendOrder[]; total: number }>(r)

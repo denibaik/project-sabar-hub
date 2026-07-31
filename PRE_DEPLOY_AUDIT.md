@@ -5,8 +5,8 @@ Diurutkan dari yang paling menghalangi deploy.
 
 Legenda: **[UJI]** = dibuktikan dengan tes · **[KODE]** = dari pembacaan kode
 
-> **Status 31 Juli 2026** — #1, #2, #5 sudah **DIPERBAIKI** (commit `c6f4767`).
-> #3 sebagian, #4 masih terbuka. Sisanya belum dikerjakan.
+> **Status 31 Juli 2026** — #1, #2, #3, #4, #5 sudah **DIPERBAIKI**.
+> Tersisa #4b (ganti kunci default) sebagai blocker terakhir sebelum deploy.
 
 ---
 
@@ -32,33 +32,36 @@ Sekarang dari env: `CORS_ORIGINS` (dipisah koma).
 
 ---
 
+### 3. ~~Registration key di script bot publik~~ → SELESAI
+Script tidak lagi memuat kunci apa pun. Token kini di-set operator sebelum loader:
+```lua
+getgenv().BOT_TOKEN = "sbr_bot_xxxxx"
+loadstring(...)()
+```
+Pendaftaran otomatis dihapus — hanya admin yang bisa membuat bot (lewat dashboard,
+kuncinya server-side). Script aman dipublikasikan.
+
+**[UJI]** `grep REGISTRATION_KEY` pada script → 0 kecocokan. Bot raynorstore45
+berhasil online memakai token saja, tanpa langkah registrasi.
+
+### 4. ~~Bot palsu bisa "menyelesaikan" order~~ → SELESAI
+Karena hanya admin yang bisa membuat bot (#3), penyerang luar tak punya jalan
+mendaftarkan bot palsu.
+
+Ditambah **pencabutan token**: `DELETE /api/v1/bots/{id}` (butuh admin key) +
+tombol "Cabut token & hapus bot" di dashboard. Kalau satu token bocor, matikan
+bot itu saja tanpa mengganggu yang lain.
+
+**[UJI]** Cabut tanpa admin key → 401; dengan admin key → 204; token lama
+setelah dicabut → 401. Ada test otomatisnya (`test_revoked_bot_token_is_rejected`).
+
+*Sisa risiko:* bot dengan token sah tetap dipercaya laporannya. Kalau token bocor,
+pemegangnya bisa melapor `fulfilled` palsu sampai kamu mencabutnya. Verifikasi silang
+(bandingkan penurunan stok dengan snapshot heartbeat) bisa ditambahkan nanti.
+
+---
+
 ## 🔴 BLOCKER — masih terbuka
-
-### 3. Registration key masih ada di script bot publik ⚠️ SEBAGIAN
-**[KODE]** `RaynorHubBot.lua` masih memuat `REGISTRATION_KEY`, dan script itu publik
-di GitHub + `/files/loader.lua`.
-
-**Yang membaik:** kunci pendaftaran kini **terpisah** dari admin key. Jadi kunci yang
-bocor lewat script **tidak lagi** bisa dipakai membuat order atau membaca data.
-Dampaknya menyempit jadi: hanya bisa mendaftarkan bot.
-
-**Yang tersisa:** cacat desainnya tetap ada — script auto-register harus membawa kunci,
-dan script-nya dibagikan publik.
-
-**Perbaikan (pilih satu):**
-- **A. Pra-register di dashboard** → tanam *bot token* (per akun) di script.
-- **B. Kode pendaftaran sekali pakai** — dashboard menerbitkan kode berumur pendek.
-
-### 4. Bot palsu bisa "menyelesaikan" order tanpa mengirim apa pun
-**[KODE]** Konsekuensi dari #3. Siapa pun dengan registration key bisa mendaftarkan
-bot palsu, mengklaim order, lalu `POST /result` `status="fulfilled"` — backend
-memercayainya tanpa verifikasi.
-
-Akibatnya: pembeli tidak menerima barang, tapi sistem mencatat `done`.
-Untuk marketplace berbayar, ini fatal.
-
-**Perbaikan:** tutup #3 dulu, lalu pertimbangkan verifikasi silang (bandingkan
-penurunan stok yang dilaporkan bot dengan snapshot heartbeat sebelumnya).
 
 ### 4b. Kunci default masih nilai contoh
 `dev-admin-key`, `dev-registration-key`, `changeme`, `dev-session-secret-change-me`
@@ -195,8 +198,8 @@ Perlu nginx atau Caddy (TLS otomatis) + systemd agar backend hidup lagi setelah 
 1. ~~CORS dari env (#5)~~ ✅
 2. ~~Keluarkan kunci dari browser (#2)~~ ✅
 3. ~~Auth admin untuk dashboard + endpoint baca (#1)~~ ✅
-4. **Ganti semua kunci default** (#4b) — belum
-5. **Keluarkan registration key dari script publik** (#3, #4) — belum
+4. ~~Keluarkan registration key dari script publik (#3, #4)~~ ✅
+5. **Ganti semua kunci default** (#4b) — **belum, ini yang tersisa**
 
 **Sebelum menerima pembeli sungguhan:**
 5. Perbaiki auth bot O(n) (#6) — ini sudah lambat di 10 bot

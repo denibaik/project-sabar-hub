@@ -26,6 +26,6 @@ def test_register_heartbeat_and_list_bots():
     )
     assert heartbeat.status_code == 200
     assert heartbeat.json()["status"] == "online"
-    listing = client.get("/api/v1/bots")
+    listing = client.get("/api/v1/bots", headers={"X-Admin-Key": "dev-admin-key"})
     assert listing.status_code == 200
     assert listing.json()["total"] >= 1
