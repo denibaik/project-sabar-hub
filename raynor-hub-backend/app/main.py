@@ -150,10 +150,37 @@ def bot_is_online(bot: Bot) -> bool:
     hb = _aware(bot.last_heartbeat_at)
     return hb is not None and (datetime.now(timezone.utc) - hb).total_seconds() <= settings.heartbeat_timeout_seconds
 
-def can_fulfill(inventory: dict, items) -> bool:
+PET_CATEGORY = "Pets"
+
+
+def _looks_like_uuid(value: str) -> bool:
+    return len(value) == 36 and value.count("-") == 4
+
+
+def owned_count(inventory: dict, names: dict, category: str, item_key: str) -> int:
+    """Jumlah yang dimiliki untuk (category, item_key).
+
+    Untuk `Pets`, tiap ekor punya UUID sendiri sehingga tak bisa dipesan lewat
+    kunci tetap. Karena itu `item_key` pet boleh berupa NAMA (mis. "Raccoon"),
+    dan di sini dihitung berapa ekor yang namanya cocok. UUID tetap diterima
+    demi order lama.
+    """
+    bucket = inventory.get(category) or {}
+    if category != PET_CATEGORY or _looks_like_uuid(item_key):
+        return bucket.get(item_key, 0)
+
+    name_map = (names or {}).get(category) or {}
+    wanted = item_key.strip().lower()
+    return sum(
+        1 for uuid in bucket
+        if (name_map.get(uuid) or uuid).strip().lower() == wanted
+    )
+
+
+def can_fulfill(inventory: dict, items, names: dict | None = None) -> bool:
     for it in items:
-        have = (inventory.get(it.category) or {}).get(it.item_key, 0)
-        if have < it.count: return False
+        if owned_count(inventory, names or {}, it.category, it.item_key) < it.count:
+            return False
     return True
 
 def order_response(o: Order) -> OrderResponse:
@@ -179,7 +206,8 @@ def sweep_stale_orders(db: Session) -> int:
     inv_repo = SqlAlchemyBotInventoryRepository(db)
     orders = SqlAlchemyOrderRepository(db)
 
-    online_stocks = [inv_repo.get(b.id) or {} for b in bot_repo.list() if bot_is_online(b)]
+    online = [(inv_repo.get(b.id) or {}, inv_repo.get_names(b.id) or {})
+              for b in bot_repo.list() if bot_is_online(b)]
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.order_stale_seconds)
 
     swept = 0
@@ -187,7 +215,7 @@ def sweep_stale_orders(db: Session) -> int:
         created = _aware(order.created_at)
         if created is None or created > cutoff:
             continue
-        if any(can_fulfill(stock, order.items) for stock in online_stocks):
+        if any(can_fulfill(stock, order.items, nm) for stock, nm in online):
             continue  # masih ada yang sanggup — biarkan
         order.status = OrderStatus.FAILED
         order.error = "no_bot_has_stock (kedaluwarsa)"
@@ -377,11 +405,16 @@ def list_items(db: Session = Depends(get_db)):
                 c = 1 if isinstance(count, dict) else int(count or 0)
                 if c <= 0:
                     continue
-                e = agg.setdefault((cat, key), {"total": 0, "bots": set(), "display": None})
+                display = (names.get(cat) or {}).get(key)
+                # Pet dikelompokkan per NAMA, bukan per UUID: pembeli memesan
+                # "Raccoon", bukan seekor tertentu. Bot yang memilih ekornya
+                # saat mengirim.
+                agg_key = (cat, display or key) if cat == PET_CATEGORY and display else (cat, key)
+                e = agg.setdefault(agg_key, {"total": 0, "bots": set(), "display": None})
                 e["total"] += c
                 e["bots"].add(bot.username)
                 if e["display"] is None:
-                    e["display"] = (names.get(cat) or {}).get(key)
+                    e["display"] = display
     result = [
         AvailableItem(
             category=c, item_key=k, display_name=v["display"] or k,
@@ -397,11 +430,12 @@ def claim_order(payload: ClaimRequest, response: Response, token: str = Depends(
     bot = resolve_bot(db, token)
     inv_repo = SqlAlchemyBotInventoryRepository(db)
     inventory = payload.inventory if payload.inventory is not None else inv_repo.get(bot.id)
+    names = payload.names if payload.names is not None else inv_repo.get_names(bot.id)
     if payload.inventory is not None:
         inv_repo.upsert(bot.id, payload.inventory, payload.names)  # simpan yang terbaru
     orders = SqlAlchemyOrderRepository(db)
     for order in orders.list_claimable():
-        if not can_fulfill(inventory, order.items):
+        if not can_fulfill(inventory, order.items, names):
             continue
         # Ambil lewat UPDATE bersyarat — kalau bot lain lebih dulu, hasilnya None
         # dan kita lanjut ke order berikutnya. Mencegah dua bot mengklaim order

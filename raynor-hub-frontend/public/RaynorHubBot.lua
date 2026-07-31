@@ -109,11 +109,43 @@ local function snapshotInventory()
     end
     return out, names
 end
+local function looksLikeUuid(s)
+    return type(s) == "string" and #s == 36 and select(2, s:gsub("%-", "")) == 4
+end
+
+-- Pet: tiap ekor punya UUID sendiri, jadi order menyebut NAMA (mis. "Raccoon").
+-- Kembalikan daftar UUID pet yang namanya cocok.
+local function petUuidsByName(name)
+    local rep = PSC:GetLocalReplica()
+    local found = {}
+    if not (rep and rep.Data and rep.Data.Inventory) then return found end
+    local pets = rep.Data.Inventory.Pets
+    if typeof(pets) ~= "table" then return found end
+
+    local wanted = tostring(name):lower():gsub("^%s+", ""):gsub("%s+$", "")
+    for uuid, entry in pairs(pets) do
+        local disp = entry and entry.Name
+        local ok, resolved = pcall(function() return mc.Resolve("Pets", uuid, entry) end)
+        if ok and type(resolved) == "string" and resolved ~= "" then disp = resolved end
+        if disp and tostring(disp):lower() == wanted then
+            table.insert(found, uuid)
+        end
+    end
+    table.sort(found)  -- urutan tetap, agar perilaku bisa diprediksi
+    return found
+end
+
 local function ownedCount(cat, key)
     local rep = PSC:GetLocalReplica()
     if not (rep and rep.Data and rep.Data.Inventory) then return nil end
     local t = rep.Data.Inventory[cat]
     if typeof(t) ~= "table" then return 0 end
+
+    -- nama pet (bukan UUID) → hitung berapa ekor yang cocok
+    if cat == "Pets" and not looksLikeUuid(key) then
+        return #petUuidsByName(key)
+    end
+
     local v = t[key]
     if v == nil then return 0 end
     if typeof(v) == "table" then return 1 end
@@ -166,7 +198,20 @@ local function processOrder(order)
         local cnt = math.max(1, math.floor(tonumber(it.count) or 1))
         local have = ownedCount(cat, key) or 0
         if have < cnt then r.status = "released"; r.error = ("insufficient_stock:%s/%s (have %d need %d)"):format(cat, key, have, cnt); return r end
-        table.insert(batch, { Category = cat, ItemKey = key, Count = cnt }); want = want + cnt
+
+        if cat == "Pets" and not looksLikeUuid(key) then
+            -- Order menyebut nama pet; SendBatch butuh UUID. Pilih sebanyak `cnt`
+            -- ekor yang namanya cocok, masing-masing sebagai entri tersendiri.
+            local uuids = petUuidsByName(key)
+            for i = 1, cnt do
+                table.insert(batch, { Category = cat, ItemKey = uuids[i], Count = 1 })
+                want = want + 1
+            end
+            log(("  %s ×%d → %d ekor dipilih"):format(key, cnt, cnt))
+        else
+            table.insert(batch, { Category = cat, ItemKey = key, Count = cnt })
+            want = want + cnt
+        end
     end
     r.requested_total = want
     if #batch == 0 then r.error = "empty_order"; return r end
