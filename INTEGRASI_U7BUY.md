@@ -125,18 +125,61 @@ sedangkan `item_key` katalog game tanpa akhiran itu (`Ghost Pepper`, kategori
 `Seeds`). Jadi pemetaan **tidak bisa** ditebak dari nama — harus tabel eksplisit
 `productId` → (`category`, `item_key`, `qty_per_unit`).
 
-### 🚧 Tahap 2 — Klien API + pemetaan produk (BELUM)
+### ✅ Pemetaan produk — sudah terkumpul (`scripts/u7buy_products.py`)
 
-Yang masih dibutuhkan: **tabel pemetaan `productId` → item game**.
-Rencana simpan di `config` channel U7Buy, bentuknya:
+Skrip ini menelusuri seluruh riwayat order, mengumpulkan produk yang berbeda,
+dan mengusulkan pemetaannya. READ-ONLY.
+
+```bash
+.venv/Scripts/python.exe scripts/u7buy_products.py          # tabel terbaca manusia
+.venv/Scripts/python.exe scripts/u7buy_products.py --json   # kerangka product_map
+```
+
+**Hasil penelusuran 850 order:**
+
+| Game | Jumlah order | Ditangani bot? |
+|---|---|---|
+| Steal A Brainrot | 680 | ❌ game lain |
+| Grow a Garden 2 | 170 | ✅ |
+
+> **Wajib menyaring `gameName`.** Empat dari lima order di akun ini bukan Grow a
+> Garden 2. Memproses semuanya berarti bot mencoba mengirim item yang tidak ada
+> di game yang dimainkannya.
+
+Untuk Grow a Garden 2 hanya ada **2 produk berbeda**, masing-masing 85 order:
+
 ```json
 {
   "product_map": {
-    "2066921934194675713": {"category": "Seeds", "item_key": "Ghost Pepper", "per_unit": 1}
+    "2066975692396105730": {"category": "Trowels", "item_key": "Trowel",       "per_unit": 150},
+    "2066921934194675713": {"category": "Seeds",   "item_key": "Ghost Pepper", "per_unit": 1}
   }
 }
 ```
-`per_unit` untuk produk paket (mis. satu order = 10 buah).
+
+**`per_unit` bukan hal opsional.** Satu order produk pertama berarti **150 buah**
+Trowel, karena jumlahnya tertanam di nama produk (`150x Trowel | ...`). Salah
+membaca ini berarti pembeli menerima 1 dari 150 yang dibayarnya.
+
+### Batas teknis yang sudah diverifikasi ke game
+
+| Hal | Nilai | Sumber |
+|---|---|---|
+| Ukuran halaman `order/list` | **terkunci 10**, tak bisa diubah | diuji: `pageSize`, `page_size`, `size`, `limit` semuanya diabaikan |
+| Batas satu tumpukan kiriman | 1.000.000 | `ItemCatalog.MAX_STACK_DEFAULT` |
+| 150 buah dalam satu kiriman | diizinkan | `IsStackCountAllowed(150)` → true |
+| `Seeds` bernama ketat | ya | `STRICT_NAME_CATEGORIES = {Seeds = true}` |
+
+Konsekuensi dari baris terakhir, dan ini yang paling penting:
+
+```lua
+IsKnownStackableItem("Seeds", "Ghost Pepper")       --> true
+IsKnownStackableItem("Seeds", "Ghost Pepper Seed")  --> false   ← ditolak game
+```
+
+Nama produk U7Buy **tidak boleh** diteruskan apa adanya. Untuk kategori `Seeds`,
+game memvalidasi nama terhadap daftar benih yang sah, dan `"Ghost Pepper Seed"`
+tidak ada di daftar itu. Ini bukan soal kerapian — kirimannya benar-benar gagal.
 
 ### 🚧 Tahap 3 — Sambungkan ke alur order (BELUM)
 
