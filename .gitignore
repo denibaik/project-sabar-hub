@@ -26,3 +26,5 @@ raynor-hub-backend/data/
 raynor-hub-backend/.env
 raynor-hub-backend/.env.local
 raynor-hub-backend/.venv/
+raynor-hub-backend/build/
+raynor-hub-backend/*.egg-info/
