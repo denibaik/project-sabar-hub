@@ -87,14 +87,56 @@ Webhook "new_order_received"
 tapi hanya tersimpan sekali; tanda tangan salah/kosong → `401`.
 4 test otomatis (`tests/test_u7buy_webhook.py`).
 
+### ✅ Bentuk data nyata (terverifikasi lewat `scripts/u7buy_probe.py`)
+
+Kredensial terpasang, API terhubung, **848 order** terbaca.
+
+**Username pembeli — inilah yang dicari:**
+```json
+GET /open-api/order/delivery_param_info?orderId=...
+{
+  "code": 200,
+  "data": {
+    "deliveryParams": [
+      { "name": "Roblox Username", "value": "Sssirdiii " }
+    ]
+  }
+}
+```
+Ambil dari `data.deliveryParams[]` yang `name == "Roblox Username"`.
+⚠️ **Nilainya bisa ada spasi di ujung** (`'Sssirdiii '`) — wajib `.strip()`,
+kalau tidak `GetUserIdFromNameAsync` akan gagal.
+
+**Field order yang relevan** (`/open-api/order/list` & `/{orderId}`):
+
+| Field | Contoh | Kegunaan |
+|---|---|---|
+| `orderId` | `2082900605021990915` | kunci utama, untuk dedup & callback |
+| `productId` | `2066921934194675713` | **kunci pemetaan produk** |
+| `productName` | `Ghost Pepper Seed \| Grow A Garden 2 \| Instant Delivery` | acuan manusia |
+| `quantity` | `2` | jumlah yang dibeli |
+| `orderStatus` / `orderStatusName` | `4` / `To Receive` | 2=Preparing, 3=Delivering, 4=To Receive, 5=Completed |
+| `deliveryMethod` | `Gifting` | cocok dengan cara kerja bot kita |
+| `deliveryFlag` | `0` | penanda sudah dikirim atau belum |
+| `gameName` | `Grow a Garden 2` | filter game |
+
+**Catatan penamaan:** produk U7Buy pakai nama panjang ("Ghost Pepper **Seed**"),
+sedangkan `item_key` katalog game tanpa akhiran itu (`Ghost Pepper`, kategori
+`Seeds`). Jadi pemetaan **tidak bisa** ditebak dari nama — harus tabel eksplisit
+`productId` → (`category`, `item_key`, `qty_per_unit`).
+
 ### 🚧 Tahap 2 — Klien API + pemetaan produk (BELUM)
 
-Butuh darimu:
-1. **AppId & AppSecret** → isi di `raynor-hub-backend/.env` (jangan kirim lewat chat)
-2. **Satu contoh order nyata** (atau dari sandbox) — untuk mengetahui bentuk asli
-   `delivery_param_info`, khususnya field mana yang berisi username Roblox pembeli
-3. **Daftar produk yang kamu jual di U7Buy** — untuk dipetakan ke `category`/`item_key`
-   katalog game (mis. offer "Super Sprinkler x10" → `Sprinklers`/`Super Sprinkler`, qty 10)
+Yang masih dibutuhkan: **tabel pemetaan `productId` → item game**.
+Rencana simpan di `config` channel U7Buy, bentuknya:
+```json
+{
+  "product_map": {
+    "2066921934194675713": {"category": "Seeds", "item_key": "Ghost Pepper", "per_unit": 1}
+  }
+}
+```
+`per_unit` untuk produk paket (mis. satu order = 10 buah).
 
 ### 🚧 Tahap 3 — Sambungkan ke alur order (BELUM)
 

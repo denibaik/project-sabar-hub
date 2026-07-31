@@ -28,6 +28,13 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+# Data marketplace bisa memuat emoji/non-ASCII; konsol Windows default (cp1252)
+# akan crash. Paksa UTF-8 dan ganti karakter yang tak terwakili.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:  # noqa: BLE001
+    pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.core.config import settings  # noqa: E402
 
