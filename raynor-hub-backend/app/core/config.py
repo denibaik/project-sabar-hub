@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     capture_webhook_token: str = ""
     # daftar origin dashboard, dipisah koma. Di VPS isi dgn domain asli.
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # Alamat backend yang dipakai BOT. Disuntikkan ke script saat disajikan lewat
+    # /files/loader.lua, sehingga file di repo tak perlu diedit di server —
+    # editan seperti itu membuat `git pull` bentrok setiap kali ada pembaruan.
+    # Kosong = pakai nilai yang tertulis di script.
+    public_api_url: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property

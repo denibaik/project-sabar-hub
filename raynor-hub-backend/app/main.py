@@ -30,6 +30,7 @@ from app.api.v1.schemas.channels import (
 )
 import asyncio
 import hmac
+import re
 import json
 from contextlib import asynccontextmanager
 import csv as _csv
@@ -635,6 +636,23 @@ _SCRIPT_PATH = _Path(__file__).resolve().parent.parent.parent / "raynor-hub-fron
 
 @app.get("/files/loader.lua", response_class=PlainTextResponse)
 def get_loader_script():
+    """Sajikan script bot, dengan BASE_URL disesuaikan alamat backend ini.
+
+    Tanpa ini, alamat backend harus diedit langsung di file yang ter-track git,
+    sehingga setiap `git pull` bentrok dengan editan tersebut.
+    """
     if not _SCRIPT_PATH.exists():
         raise HTTPException(status_code=404, detail="Script belum ada di public/RaynorHubBot.lua")
-    return PlainTextResponse(_SCRIPT_PATH.read_text(encoding="utf-8"), media_type="text/plain")
+
+    script = _SCRIPT_PATH.read_text(encoding="utf-8")
+    target = settings.public_api_url.strip().rstrip("/")
+    if target:
+        script, n = re.subn(
+            r'(\bBASE_URL\s*=\s*)"[^"]*"',
+            lambda m: f'{m.group(1)}"{target}"',
+            script,
+            count=1,
+        )
+        if n == 0:
+            print("[loader] peringatan: baris BASE_URL tidak ditemukan di script")
+    return PlainTextResponse(script, media_type="text/plain")

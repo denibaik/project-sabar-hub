@@ -279,9 +279,10 @@ getgenv().BOT_TOKEN = "sbr_bot_xxxxx"
 local u="https://api.domainmu.com/files/loader.lua";local ok,s=pcall(function() return game:HttpGet(u) end);loadstring(ok and s or (request or http_request)({Url=u,Method="GET"}).Body)()
 ```
 
-> **Penting:** ubah `CONFIG.BASE_URL` di `raynor-hub-frontend/public/RaynorHubBot.lua`
-> dari `http://127.0.0.1:8000` menjadi `https://api.domainmu.com`, commit, lalu
-> `git pull` di server. Kalau tidak, bot tak bisa menghubungi backend.
+> **Alamat backend untuk bot** diatur lewat `PUBLIC_API_URL` di
+> `raynor-hub-backend/.env` — backend menyuntikkannya saat menyajikan
+> `/files/loader.lua`. Jangan mengedit `RaynorHubBot.lua` di server: file itu
+> ter-track git, sehingga editannya membuat `git pull` bentrok tiap ada pembaruan.
 
 ---
 
