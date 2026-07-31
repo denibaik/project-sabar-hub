@@ -190,11 +190,14 @@ def claim_order(payload: ClaimRequest, response: Response, token: str = Depends(
         inv_repo.upsert(bot.id, payload.inventory, payload.names)  # simpan yang terbaru
     orders = SqlAlchemyOrderRepository(db)
     for order in orders.list_claimable():
-        if can_fulfill(inventory, order.items):
-            order.status = OrderStatus.PROCESSING
-            order.assigned_bot = bot.username
-            orders.save(order)
-            return order_response(order)
+        if not can_fulfill(inventory, order.items):
+            continue
+        # Ambil lewat UPDATE bersyarat — kalau bot lain lebih dulu, hasilnya None
+        # dan kita lanjut ke order berikutnya. Mencegah dua bot mengklaim order
+        # yang sama (yang berarti barang terkirim dobel).
+        claimed = orders.claim_atomically(order.id, bot.username)
+        if claimed is not None:
+            return order_response(claimed)
     response.status_code = 204  # tak ada order yang bisa dipenuhi bot ini
     return None
 

@@ -87,7 +87,7 @@ Run berikutnya di akun yang sama tak perlu `BOT_TOKEN` lagi (tersimpan otomatis)
 - **Web store publik** — halaman pembeli belum dibuat.
 - **Backorder sweeper** — order tanpa bot ber-stok menggantung `pending` selamanya.
 
-- **PostgreSQL + claim aman balapan**, **Alembic**, **rate limiting**, **TLS/systemd**.
+- **PostgreSQL**, **Alembic**, **rate limiting**. (Claim sudah aman balapan; TLS/systemd ada panduannya.)
 - Halaman `/` (index lama) & AI Control Center masih mock.
 
 Detail lengkap + prioritas: lihat **PRE_DEPLOY_AUDIT.md**.
@@ -118,7 +118,7 @@ Panduan deploy VPS: lihat **DEPLOY_DIGITALOCEAN.md**.
 | Backorder sweeper | *"Tambah backorder sweeper: order pending tanpa bot ber-stok → failed setelah timeout"* |
 | Perbaiki auth O(n) | *"Percepat resolve_bot: lookup token pakai prefix ber-index, argon2 sekali saja"* |
 | PostgreSQL + Alembic | *"Pindahkan backend ke PostgreSQL dan pasang Alembic"* |
-| Claim aman balapan | *"Amankan claim dari race: SELECT FOR UPDATE SKIP LOCKED / UPDATE bersyarat"* |
+
 | Integrasi marketplace | *"Integrasi API Itemku untuk tarik order otomatis"* (siapkan kredensial) |
 | Deploy VPS | *"Bantu deploy ke VPS: nginx + TLS + systemd + PostgreSQL"* |
 

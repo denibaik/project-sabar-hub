@@ -197,9 +197,14 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
-> **Jangan tambahkan `--workers`.** Claim order belum aman dari balapan
-> (PRE_DEPLOY_AUDIT.md #7); lebih dari satu worker bisa membuat dua bot
-> mengklaim order yang sama → **barang terkirim dobel**.
+> **Soal `--workers`:** claim order kini aman dari balapan (UPDATE bersyarat,
+> lihat PRE_DEPLOY_AUDIT.md #7), jadi lebih dari satu worker **tidak** akan
+> menyebabkan barang terkirim dobel — sudah diuji dengan 2 worker × 6 bot.
+>
+> Meski begitu, **tetap pakai 1 worker selama masih SQLite** (default di atas):
+> SQLite hanya mengizinkan satu penulis, jadi worker tambahan justru memicu
+> `database is locked`. Setelah pindah ke PostgreSQL, silakan naikkan, mis.
+> `--workers 2`.
 
 ### Frontend
 ```bash
@@ -336,7 +341,7 @@ Rinciannya di **PRE_DEPLOY_AUDIT.md**.
 
 | Hal | Dampak | Penanganan sementara |
 |---|---|---|
-| **Claim rawan balapan** (#7) | Dua bot bisa klaim order sama → kirim dobel | **Jalankan 1 worker saja** (sudah diatur di §7) |
+| **SQLite penulis tunggal** (#9) | `database is locked` saat ramai | 1 worker; pindah PostgreSQL untuk skala |
 | **Order menggantung** (#8) | Order tanpa bot ber-stok `pending` selamanya | Pantau manual di dashboard |
 | **Laporan bot dipercaya** (#4) | Token bocor → bisa lapor `fulfilled` palsu | Cabut token lewat dashboard |
 | **Belum ada rate limit** (#15) | Endpoint bisa dibanjiri | Batasi dashboard per-IP (§10) |

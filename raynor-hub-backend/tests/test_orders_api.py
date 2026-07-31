@@ -100,3 +100,42 @@ def test_revoked_bot_token_is_rejected():
     # token lama ditolak
     assert client.post("/api/v1/bots/heartbeat", headers=auth,
                        json={"server": "x", "ping_ms": 0, "inventory": {}}).status_code == 401
+
+
+def test_concurrent_claims_never_double_assign():
+    """Banyak bot claim bersamaan → order yang sama tidak boleh diberikan 2×.
+
+    Tanpa UPDATE bersyarat, pola baca-lalu-tulis bisa memberikan satu order ke
+    beberapa bot sekaligus — artinya barang terkirim dobel ke pembeli.
+    """
+    import threading
+
+    stock = {"Seeds": {"RaceSeed": 99}}
+    tokens = [_register(inventory=stock)[1] for _ in range(6)]
+
+    # satu order saja, semua bot sanggup memenuhinya
+    r = client.post("/api/v1/orders", headers=ADMIN, json={
+        "recipient": "raceBuyer",
+        "items": [{"category": "Seeds", "item_key": "RaceSeed", "count": 1}],
+    })
+    assert r.status_code == 201
+    order_id = r.json()["id"]
+
+    winners: list[str] = []
+    lock = threading.Lock()
+    start = threading.Barrier(len(tokens))
+
+    def claim(token: str):
+        start.wait()  # semua thread menembak sedekat mungkin
+        resp = client.post("/api/v1/bots/claim",
+                           headers={"Authorization": f"Bearer {token}"},
+                           json={"inventory": stock})
+        if resp.status_code == 200 and resp.json().get("id") == order_id:
+            with lock:
+                winners.append(token)
+
+    threads = [threading.Thread(target=claim, args=(t,)) for t in tokens]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    assert len(winners) == 1, f"order diklaim {len(winners)} bot — harusnya tepat 1"

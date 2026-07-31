@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from app.domain.orders.entities import Order, OrderItem, OrderStatus
 from app.infrastructure.database.models.order import OrderModel, BotInventoryModel
@@ -54,6 +54,24 @@ class SqlAlchemyOrderRepository:
             if nr is None or nr <= now:
                 out.append(self._to_entity(r))
         return out
+
+    def claim_atomically(self, order_id: UUID, bot_username: str) -> Order | None:
+        """Ambil order hanya jika masih `pending`. Mengembalikan None kalau kalah balapan.
+
+        `UPDATE ... WHERE status='pending'` bersifat atomik di level database:
+        walau banyak proses/worker menjalankannya bersamaan, hanya SATU yang
+        rowcount-nya 1. Sisanya dapat 0 dan harus mencoba order lain.
+        Ini menggantikan pola baca-lalu-tulis yang rawan balapan.
+        """
+        result = self.db.execute(
+            update(OrderModel)
+            .where(OrderModel.id == order_id, OrderModel.status == OrderStatus.PENDING.value)
+            .values(status=OrderStatus.PROCESSING.value, assigned_bot=bot_username, updated_at=_now())
+        )
+        self.db.commit()
+        if result.rowcount == 0:
+            return None
+        return self.get(order_id)
 
     def save(self, order: Order) -> Order:
         row = self.db.get(OrderModel, order.id)

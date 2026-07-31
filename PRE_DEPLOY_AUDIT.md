@@ -99,24 +99,34 @@ saat startup, sampai Alembic dipasang (#10).
 
 ---
 
-### 7. Claim rawan balapan (read-then-write tanpa lock)
-**[KODE]** Pola di `claim_order()`: `SELECT pending → cek stok → UPDATE`,
-tanpa transaksi atau penguncian baris.
+### 7. ~~Claim rawan balapan~~ → SELESAI
 
-**[UJI]** Aku uji 10 ronde × 5 bot claim bersamaan: **tidak pernah terjadi
-double-claim**. Jadi saat ini praktiknya aman — kemungkinan karena kunci tulis
-SQLite dan latensi argon2 (#6) tanpa sengaja menyerialkan permintaan.
+**Masalahnya:** `claim_order()` memakai pola `SELECT pending → cek stok → UPDATE`
+tanpa penguncian. Dua permintaan bersamaan bisa sama-sama melihat order sebagai
+`pending` lalu sama-sama mengambilnya → **barang terkirim dobel**.
 
-⚠️ **Setelah #6 diperbaiki, penyerialan tak sengaja itu berkurang drastis**
-(auth 0,48 dtk → 0,08 dtk), jadi jendela balapannya melebar. Ini menaikkan
-prioritas #7 — apalagi kalau pindah ke PostgreSQL.
+**Perbaikannya:** pengambilan lewat UPDATE bersyarat —
+`UPDATE ... WHERE id=? AND status='pending'` lalu cek `rowcount`. Ini atomik di
+level database (SQLite maupun PostgreSQL): hanya satu pemanggil yang dapat
+rowcount 1, sisanya dapat 0 dan lanjut ke order berikutnya.
 
-Tapi jangan andalkan itu. Begitu kamu pindah ke PostgreSQL, atau menjalankan
-uvicorn dengan `--workers > 1`, penyerialan tak sengaja itu hilang dan dua bot
-bisa mengklaim order yang sama → **barang terkirim dobel**.
+**[UJI] Race-nya ternyata NYATA.** Uji curl pertamaku dulu tidak berhasil
+memicunya, tapi test otomatis dengan `threading.Barrier` (6 thread menembak
+serempak) **gagal** saat kode dikembalikan ke versi lama — membuktikan bug-nya
+ada, sekaligus membuktikan test-nya valid, bukan lolos kebetulan.
 
-**Perbaikan:** `SELECT ... FOR UPDATE SKIP LOCKED` (Postgres), atau UPDATE bersyarat
-(`UPDATE ... WHERE id=? AND status='pending'` lalu cek rowcount).
+Setelah diperbaiki:
+
+| Skenario | Hasil |
+|---|---|
+| Test otomatis, 6 bot serempak (`threading.Barrier`) | tepat **1** pemenang |
+| HTTP nyata, **2 uvicorn worker** × 6 bot, 15 ronde | **0** double-claim |
+| Kode lama (dikembalikan sementara) | test **gagal** ✓ |
+
+Regresi dijaga oleh `test_concurrent_claims_never_double_assign`.
+
+*Catatan:* karena aman balapan, `--workers > 1` tidak lagi menyebabkan kirim
+dobel. Batasan yang tersisa tinggal SQLite (#9) yang hanya mengizinkan satu penulis.
 
 ---
 
