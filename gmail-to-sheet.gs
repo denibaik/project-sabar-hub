@@ -1,6 +1,9 @@
 /**
  * Gmail → Google Sheet : ambil order VCGamers dari email, tulis ke sheet.
  *
+ * Kolom yang ditulis:
+ *   recipient | category | item_key | count | order_ref | source
+ *
  * Notifikasi Discord VCGamers tidak memuat username Roblox pembeli, tapi
  * EMAIL-nya memuat. Skrip ini membaca email tersebut, mengurai detail order,
  * lalu menambahkannya sebagai baris di sheet — yang kemudian ditarik otomatis
@@ -50,6 +53,7 @@ const PRODUCT_MAP = {
 };
 
 const SHEET_NAME = "Sheet1";        // nama tab di spreadsheet
+const SOURCE = "vcgamers";          // asal order — tampil sebagai badge di dashboard
 const GMAIL_QUERY = 'from:vcgamers.com newer_than:7d';
 const LABEL_DONE = "SabarHub/Diproses";
 const LABEL_CHECK = "SabarHub/Perlu-Cek";
@@ -58,7 +62,7 @@ const LABEL_CHECK = "SabarHub/Perlu-Cek";
 //  Tidak perlu diubah di bawah sini
 // ══════════════════════════════════════════════════════════════════════
 
-const HEADER = ["recipient", "category", "item_key", "count", "order_ref"];
+const HEADER = ["recipient", "category", "item_key", "count", "order_ref", "source"];
 
 function prosesEmailBaru() {
   const sheet = ambilSheet_();
@@ -99,6 +103,7 @@ function prosesEmailBaru() {
         map.item_key,
         order.jumlah * (map.perUnit || 1),
         order.ref,
+        SOURCE,           // agar order tampil sebagai "VCGamers", bukan "Google Sheet"
       ]);
       sudahAda[order.ref] = true;
       ditulis++;

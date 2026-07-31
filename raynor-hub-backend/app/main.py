@@ -570,6 +570,10 @@ def sync_google_sheet(db: Session, ch: Channel) -> dict:
         category = row.get("category")
         item_key = row.get("item_key") or row.get("item")
         ref = row.get("order_ref") or row.get("ref") or ""
+        # Kolom `source` opsional: sheet sering hanya perantara (mis. email
+        # VCGamers ditulis ke sheet), jadi asal sebenarnya bisa disebutkan
+        # agar order tidak semuanya terlabel "Google Sheet".
+        row_source = (row.get("source") or "").strip().lower() or "google_sheet"
         try:
             count = max(1, int(row.get("count") or row.get("qty") or "1"))
         except ValueError:
@@ -589,7 +593,7 @@ def sync_google_sheet(db: Session, ch: Channel) -> dict:
 
         try:
             order = Order(uuid4(), recipient.strip(), [OrderItem(category, item_key, count)],
-                          note=f"gsheet:{ref}", source="google_sheet")
+                          note=f"gsheet:{ref}", source=row_source)
             orders.create(order)
             imported += 1
             new_refs.append(ref)

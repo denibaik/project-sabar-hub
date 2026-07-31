@@ -111,3 +111,23 @@ def test_duplicate_ref_within_one_file_imported_once():
         assert result["skipped"] == 1
     finally:
         srv.shutdown()
+
+
+def test_source_column_labels_the_real_origin():
+    """Sheet sering cuma perantara — kolom `source` menyebut asal sebenarnya."""
+    srv, url = _serve()
+    try:
+        CSV_CONTENT["data"] = (
+            "recipient,category,item_key,count,order_ref,source\n"
+            "buyerVC,Seeds,Strawberry,1,SRC-1,vcgamers\n"
+            "buyerPlain,Seeds,Strawberry,1,SRC-2,\n"
+        )
+        ch = _channel(url)
+        assert _sync(ch)["imported"] == 2
+
+        rows = client.get("/api/v1/orders?page_size=50", headers=ADMIN).json()["items"]
+        by_recipient = {o["recipient"]: o for o in rows}
+        assert by_recipient["buyerVC"]["source"] == "vcgamers"
+        assert by_recipient["buyerPlain"]["source"] == "google_sheet", "kosong → default sheet"
+    finally:
+        srv.shutdown()
