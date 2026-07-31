@@ -67,7 +67,7 @@ Run berikutnya di akun yang sama tak perlu `BOT_TOKEN` lagi (tersimpan otomatis)
 - **Backend Items** — `GET /api/v1/items` agregasi stok semua bot online, dengan
   `display_name` ramah (mis. "Golden Dragonfly", bukan UUID).
 - **Backend Channels** — CRUD + **Google Sheet sync** (baca CSV published → bikin order,
-  dedup via `order_ref`). *Endpoint jalan; UI-nya belum disambung.*
+  dedup via `order_ref`) — **UI sudah tersambung & teruji**.
 - **Bot** — token-based (tanpa kunci di script), heartbeat, claim, verifikasi penerima,
   cek stok, SendBatch, verifikasi inventory, multi-item 1 order, auto-split >20 item
   dengan cooldown, single-instance guard.
@@ -81,7 +81,7 @@ Run berikutnya di akun yang sama tak perlu `BOT_TOKEN` lagi (tersimpan otomatis)
 
 ### 🚧 Belum
 - **Form koneksi channel** — halaman `/marketplace/[slug]` masih UI placeholder.
-- **Google Sheet sync UI** — backend jalan, tombol Sync di dashboard belum ada. ← *berikutnya*
+
 - **Integrasi API marketplace asli** — butuh kredensial Itemku/G2G/dll.
 - **Web store publik** — halaman pembeli belum dibuat.
 - **Backorder sweeper** — order tanpa bot ber-stok menggantung `pending` selamanya.

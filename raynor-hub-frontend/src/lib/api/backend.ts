@@ -36,6 +36,27 @@ export interface BackendOrder {
   updated_at: string | null
 }
 
+export type ChannelType =
+  | "itemku" | "g2g" | "eldorado" | "u7buy" | "vcgamers" | "webstore" | "google_sheet"
+
+export interface BackendChannel {
+  id: string
+  type: ChannelType
+  name: string
+  enabled: boolean
+  status: "disconnected" | "connected" | "error" | "syncing"
+  config: Record<string, unknown>
+  last_synced_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface SyncResult {
+  imported: number
+  skipped: number
+  errors: string[]
+}
+
 export interface AvailableItem {
   category: string
   item_key: string      // kunci asli untuk SendBatch (mis. UUID pet)
@@ -97,6 +118,39 @@ export const backend = {
       body: JSON.stringify({ recipient, items, note }),
     })
     return unwrap<BackendOrder>(r)
+  },
+
+  // ---- Marketplace channels ----
+  async listChannels(): Promise<BackendChannel[]> {
+    const r = await fetch(`${API_BASE}/api/v1/channels`, { cache: "no-store" })
+    const d = await unwrap<{ items: BackendChannel[]; total: number }>(r)
+    return d.items
+  },
+
+  async createChannel(type: ChannelType, name: string, config: Record<string, unknown> = {}): Promise<BackendChannel> {
+    const r = await fetch(`${API_BASE}/api/v1/channels`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, name, config }),
+    })
+    return unwrap<BackendChannel>(r)
+  },
+
+  async updateChannel(id: string, patch: { name?: string; enabled?: boolean; config?: Record<string, unknown> }): Promise<BackendChannel> {
+    const r = await fetch(`${API_BASE}/api/v1/channels/${id}`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    })
+    return unwrap<BackendChannel>(r)
+  },
+
+  async deleteChannel(id: string): Promise<void> {
+    const r = await fetch(`${API_BASE}/api/v1/channels/${id}`, { method: "DELETE" })
+    if (!r.ok && r.status !== 204) throw new Error(`HTTP ${r.status}`)
+  },
+
+  async syncChannel(id: string): Promise<SyncResult> {
+    const r = await fetch(`${API_BASE}/api/v1/channels/${id}/sync`, { method: "POST" })
+    return unwrap<SyncResult>(r)
   },
 
   async listItems(): Promise<AvailableItem[]> {

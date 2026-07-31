@@ -158,10 +158,9 @@ Kegagalannya palsu, tapi menyamarkan kegagalan asli.
 **[UJI]** Muncul sebagai `DeprecationWarning` saat test. Akan dihapus di Python mendatang.
 **Perbaikan:** `datetime.now(timezone.utc)` (sebagian sudah, sisanya belum).
 
-### 13. Belum ada `.env.example`
-Tidak ada rujukan variabel yang dibutuhkan saat deploy:
-`DATABASE_URL`, `BOT_REGISTRATION_KEY`, `HEARTBEAT_TIMEOUT_SECONDS`,
-`ORDER_RETRY_DELAY_SECONDS`, `ORDER_MAX_RELEASE`, `CORS_ORIGINS`.
+### 13. ~~Belum ada `.env.example`~~ → SELESAI
+Ada di kedua folder (`raynor-hub-backend/.env.example`, `raynor-hub-frontend/.env.example`),
+berisi placeholder + keterangan mana yang server-only.
 
 ### 14. `data/` ada di .gitignore tapi dibutuhkan saat runtime
 Deploy bersih akan gagal sebelum foldernya dibuat. (Aku sudah kena ini di lokal.)
