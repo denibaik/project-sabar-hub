@@ -56,3 +56,23 @@ def test_bot_menerima_ejaan_katalog():
 def test_alasan_gagal_menyebut_item_dan_stok():
     pesan = _kurang_apa([(INV, NAMES)], [type("I", (), {"category": "Seeds", "item_key": "Lucky Block", "count": 2})()])
     assert "Seeds/Lucky Block" in pesan and "stok terbanyak 0" in pesan
+
+
+def test_kata_jenis_di_belakang_nama_dimaklumi():
+    """Listing marketplace menulis "Strawberry Seed"; katalog menyimpan "Strawberry".
+
+    Ini persis order uji pertama yang menggantung `pending`.
+    """
+    inv = {"Seeds": {"Strawberry": 2, "Star Fruit": 3}}
+    assert owned_count(inv, {}, "Seeds", "Strawberry Seed") == 2
+    assert owned_count(inv, {}, "seeds", "strawberry seeds") == 2
+    assert owned_count(inv, {}, "Seeds", "Star Fruit Seed") == 3
+    assert canonical_item(inv, {}, "Seeds", "Strawberry Seed") == ("Seeds", "Strawberry")
+
+
+def test_pet_boleh_ditulis_dengan_kata_pet():
+    assert owned_count(INV, NAMES, "Pets", "Raccoon Pet") == 1
+
+
+def test_kata_jenis_tidak_menciptakan_kecocokan_palsu():
+    assert owned_count({"Seeds": {"Strawberry": 2}}, {}, "Seeds", "Lucky Seed") == 0

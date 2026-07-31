@@ -182,9 +182,29 @@ def _match_key(bucket: dict, wanted: str) -> str | None:
     """
     if wanted in bucket:
         return wanted
-    target = _canon(wanted)
-    if not target:
-        return None
+
+    for target in _bentuk(wanted):
+        ketemu = _cari_kunci(bucket, target)
+        if ketemu:
+            return ketemu
+    return None
+
+
+def _bentuk(nama: str) -> list[str]:
+    """Bentuk-bentuk baku yang boleh dicoba untuk sebuah nama.
+
+    Listing marketplace lazim menambahkan kata jenisnya di belakang nama
+    ("Strawberry Seed"), padahal katalog game menyimpannya polos
+    ("Strawberry") dan kategorinya sudah menyebutkan jenis itu.
+    """
+    hasil = [_canon(nama)]
+    polos = _canon(re.sub(r"\b(seeds?|pets?)\b", " ", (nama or "").lower()))
+    if polos and polos not in hasil:
+        hasil.append(polos)
+    return [b for b in hasil if b]
+
+
+def _cari_kunci(bucket: dict, target: str) -> str | None:
     cocok = [k for k in bucket if _canon(k) == target]
     return cocok[0] if len(cocok) == 1 else None
 
@@ -207,10 +227,10 @@ def owned_count(inventory: dict, names: dict, category: str, item_key: str) -> i
         return bucket.get(key, 0) if key else 0
 
     name_map = (names or {}).get(cat) or {}
-    wanted = _canon(item_key)
+    bentuk = set(_bentuk(item_key))
     return sum(
         1 for uuid in bucket
-        if _canon(name_map.get(uuid) or uuid) == wanted
+        if _canon(name_map.get(uuid) or uuid) in bentuk
     )
 
 
@@ -236,10 +256,10 @@ def canonical_item(inventory: dict, names: dict, category: str, item_key: str) -
         return cat, (_match_key(bucket, item_key) or item_key)
 
     name_map = (names or {}).get(cat) or {}
-    wanted = _canon(item_key)
+    bentuk = set(_bentuk(item_key))
     for uuid in bucket:
         nama = name_map.get(uuid) or uuid
-        if _canon(nama) == wanted:
+        if _canon(nama) in bentuk:
             return cat, nama
     return cat, item_key
 
