@@ -111,8 +111,8 @@ Detail lengkap + prioritas: lihat **PRE_DEPLOY_AUDIT.md**.
 
 | Mau lanjut apa | Prompt |
 |---|---|
-| Google Sheet sync UI | *"Sambungkan form /marketplace/google-sheet ke endpoint channels + sync"* |
 | Web store publik | *"Buat halaman web store publik untuk pembeli"* |
+| Form koneksi channel lain | *"Sambungkan form /marketplace/[slug] ke CRUD channels"* |
 | Backorder sweeper | *"Tambah backorder sweeper: order pending tanpa bot ber-stok → failed setelah timeout"* |
 | Perbaiki auth O(n) | *"Percepat resolve_bot: lookup token pakai prefix ber-index, argon2 sekali saja"* |
 | PostgreSQL + Alembic | *"Pindahkan backend ke PostgreSQL dan pasang Alembic"* |
