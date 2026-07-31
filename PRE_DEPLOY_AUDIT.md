@@ -5,8 +5,9 @@ Diurutkan dari yang paling menghalangi deploy.
 
 Legenda: **[UJI]** = dibuktikan dengan tes · **[KODE]** = dari pembacaan kode
 
-> **Status 31 Juli 2026** — semua BLOCKER (#1–#5) sudah **DIPERBAIKI**.
-> Yang tersisa hanya kategori 🟠 SERIUS dan 🟡 PENTING di bawah.
+> **Status 31 Juli 2026** — 13 dari 17 temuan sudah **DIPERBAIKI**.
+> Tersisa: **#9 PostgreSQL** & **#17 TLS/systemd** (keduanya langkah deploy,
+> ada di DEPLOY_DIGITALOCEAN.md), **#10 Alembic**, dan **#16 polling boros**.
 
 ---
 
@@ -130,18 +131,16 @@ dobel. Batasan yang tersisa tinggal SQLite (#9) yang hanya mengizinkan satu penu
 
 ---
 
-### 8. Order bisa menggantung selamanya
-**[UJI]** Saat audit masih ada 2 order `pending` yang tak akan pernah diproses:
-- `ae08566f` → `trowels/trowel` (huruf kecil, tak cocok katalog)
-- `2fdfcae7` → `Gears/Trowel` (kategori tak ada)
+### 8. ~~Order bisa menggantung selamanya~~ → SELESAI
+Sweeper berkala (lifespan task) menandai `failed` order pending yang melewati
+`ORDER_STALE_SECONDS` **dan** tak bisa dipenuhi bot online mana pun, dengan alasan
+`no_bot_has_stock (kedaluwarsa)`. Order yang masih mungkin dipenuhi tidak disentuh,
+berapa pun umurnya. Ada juga `POST /api/v1/orders/sweep` untuk menjalankan manual.
 
-Tidak ada mekanisme timeout. `mock-server.js` lama punya *backorder sweeper*,
-tapi belum dipindahkan ke FastAPI.
-
-**Perbaikan:** tugas periodik — order `pending` yang lewat batas waktu dan tak ada
-bot online ber-stok → tandai `failed` dengan alasan jelas.
-
-*Catatan: form dropdown yang baru sudah mencegah penyebab salah-ketik ini terulang.*
+**[UJI]** Dua order yang benar-benar nyangkut (`trowels/trowel`, `Gears/Trowel`)
+dibersihkan: `{swept:2}`, pending tersisa 0. Test
+`test_sweeper_fails_only_unfulfillable_stale_orders` memverifikasi order lama yang
+masih bisa dipenuhi **dan** order baru tidak ikut tersapu.
 
 ---
 
@@ -164,7 +163,7 @@ Di produksi, tiap perubahan skema jadi pekerjaan manual berisiko.
 
 **Perbaikan:** pasang Alembic sebelum ada data produksi yang berharga.
 
-### 11. Isolasi test rusak ⚠️ SEBAGIAN
+### 11. ~~Isolasi test rusak~~ → SELESAI
 **[UJI]** `pytest` gagal saat dijalankan dua kali beruntun, karena DB test tidak
 direset — bot mengklaim order sisa run sebelumnya.
 
@@ -172,23 +171,33 @@ direset — bot mengklaim order sisa run sebelumnya.
 `test-registration-key`), jadi tidak lagi bergantung pada `.env` developer —
 sebelumnya rotasi kunci membuat seluruh suite gagal.
 
-**Masih tersisa:** DB test belum direset otomatis. Untuk sekarang jalankan
-`rm -f data/sqlite/test_sabar_hub.db` sebelum `pytest`.
-**Perbaikan:** fixture yang membuat DB bersih tiap sesi test.
+**Juga diperbaiki:** `tests/conftest.py` menghapus DB test di awal sesi.
+**[UJI]** `pytest` tiga kali beruntun tanpa hapus manual: 10/10 lolos tiap kali.
 
-### 12. `datetime.utcnow()` sudah deprecated
-**[UJI]** Muncul sebagai `DeprecationWarning` saat test. Akan dihapus di Python mendatang.
-**Perbaikan:** `datetime.now(timezone.utc)` (sebagian sudah, sisanya belum).
+### 12. ~~`datetime.utcnow()` deprecated~~ → SELESAI
+Semua pemakaian diganti `datetime.now(timezone.utc)`.
+**[UJI]** Warning saat test turun dari 25 → 1, dan yang tersisa berasal dari
+Starlette (saran pakai `httpx2`), bukan kode ini.
 
 ### 13. ~~Belum ada `.env.example`~~ → SELESAI
 Ada di kedua folder (`raynor-hub-backend/.env.example`, `raynor-hub-frontend/.env.example`),
 berisi placeholder + keterangan mana yang server-only.
 
-### 14. `data/` ada di .gitignore tapi dibutuhkan saat runtime
-Deploy bersih akan gagal sebelum foldernya dibuat. (Aku sudah kena ini di lokal.)
+### 14. ~~`data/` dibutuhkan saat runtime~~ → SELESAI
+`session.py` membuat folder induk DB SQLite otomatis saat start.
+**[UJI]** Folder dihapus lalu app diimpor → folder dibuat sendiri, tanpa error.
 
-### 15. Belum ada rate limiting
-`POST /orders` dan `POST /bots` bisa dibanjiri. Tanpa auth (#1, #2), ini gampang disalahgunakan.
+### 15. ~~Belum ada rate limiting~~ → SELESAI
+Middleware sliding-window per IP dengan tiga kelompok batas: publik
+(`/health`, `/files/*`), bot (heartbeat/claim/result), dan admin. Semua bisa
+diatur lewat env; 0 = matikan.
+
+**[UJI]** Dengan limit publik 10/menit: 20 request → 9 lolos, 11 dapat 429 +
+header `Retry-After`. Dengan limit normal, 60 request dashboard berturut-turut
+semuanya lolos (tidak mengganggu polling wajar).
+
+⚠️ **Batasnya per-proses.** Dengan beberapa worker uvicorn, batas efektif menjadi
+limit × jumlah worker. Untuk batas ketat lintas worker perlu Redis.
 
 ### 16. Polling boros
 Tiap tab dashboard menembak 2–3 endpoint tiap 3–5 detik, tanpa henti. Cukup untuk satu

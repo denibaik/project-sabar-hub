@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
-from fastapi.responses import PlainTextResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pathlib import Path as _Path
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from app.infrastructure.repositories.sqlalchemy_bot_repository import SqlAlchemy
 from app.infrastructure.repositories.sqlalchemy_order_repository import (
     SqlAlchemyOrderRepository, SqlAlchemyBotInventoryRepository,
 )
+from app.infrastructure.security.rate_limit import limiter
 from app.infrastructure.security.token_hasher import generate_token, hash_token, verify_token, token_prefix
 from app.api.v1.schemas.bots import BotHeartbeatRequest, BotListResponse, BotResponse, RegisterBotRequest, RegisterBotResponse
 from app.api.v1.schemas.orders import (
@@ -25,13 +26,41 @@ from app.infrastructure.repositories.sqlalchemy_channel_repository import SqlAlc
 from app.api.v1.schemas.channels import (
     CreateChannelRequest, UpdateChannelRequest, ChannelResponse, ChannelListResponse, SyncResult,
 )
+import asyncio
+from contextlib import asynccontextmanager
 import csv as _csv
 import io as _io
 import urllib.request as _urlreq
 
 Base.metadata.create_all(bind=engine)
 ensure_columns()  # tambah kolom baru pada DB lama (sampai Alembic dipasang)
-app = FastAPI(title=settings.app_name, version="0.1.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Jalankan backorder sweeper berkala selama aplikasi hidup."""
+    task = None
+    if settings.order_stale_seconds > 0 and settings.sweeper_interval_seconds > 0:
+        async def loop():
+            from app.infrastructure.database.session import SessionLocal
+            while True:
+                await asyncio.sleep(settings.sweeper_interval_seconds)
+                db = SessionLocal()
+                try:
+                    n = await asyncio.to_thread(sweep_stale_orders, db)
+                    if n:
+                        print(f"[sweeper] {n} order kedaluwarsa ditandai failed")
+                except Exception as e:  # noqa: BLE001 — sweeper tak boleh mematikan app
+                    print(f"[sweeper] error: {e}")
+                finally:
+                    db.close()
+        task = asyncio.create_task(loop())
+    try:
+        yield
+    finally:
+        if task:
+            task.cancel()
+
+
+app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -39,6 +68,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Batasi permintaan per IP. Endpoint publik dibatasi paling ketat."""
+    path = request.url.path
+    if path.startswith("/api/v1/bots/heartbeat") or path.startswith("/api/v1/bots/claim") \
+            or path.startswith("/api/v1/bots/result"):
+        bucket, limit = "bot", settings.rate_limit_bot
+    elif path.startswith("/api/v1/"):
+        bucket, limit = "admin", settings.rate_limit_admin
+    else:
+        bucket, limit = "public", settings.rate_limit_public
+
+    client_ip = request.client.host if request.client else "unknown"
+    if not limiter.allow(f"{bucket}:{client_ip}", limit, 60):
+        return JSONResponse(
+            {"detail": "Too many requests"},
+            status_code=429,
+            headers={"Retry-After": "60"},
+        )
+    return await call_next(request)
 
 def response(bot: Bot) -> BotResponse: return BotResponse(id=bot.id, name=bot.name, username=bot.username, game=bot.game, status=bot.status, last_heartbeat_at=bot.last_heartbeat_at, server=bot.server, ping_ms=bot.ping_ms)
 
@@ -96,8 +147,45 @@ def order_response(o: Order) -> OrderResponse:
         created_at=o.created_at, updated_at=o.updated_at,
     )
 
+def sweep_stale_orders(db: Session) -> int:
+    """Tandai `failed` order pending yang sudah lama & tak bisa dipenuhi siapa pun.
+
+    Tanpa ini, order dengan item yang tak dimiliki bot mana pun akan menggantung
+    `pending` selamanya tanpa penjelasan. Order yang masih mungkin dipenuhi bot
+    online TIDAK disentuh, berapa pun umurnya.
+    """
+    if settings.order_stale_seconds <= 0:
+        return 0
+
+    bot_repo = SqlAlchemyBotRepository(db)
+    inv_repo = SqlAlchemyBotInventoryRepository(db)
+    orders = SqlAlchemyOrderRepository(db)
+
+    online_stocks = [inv_repo.get(b.id) or {} for b in bot_repo.list() if bot_is_online(b)]
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=settings.order_stale_seconds)
+
+    swept = 0
+    for order in orders.list_claimable():
+        created = _aware(order.created_at)
+        if created is None or created > cutoff:
+            continue
+        if any(can_fulfill(stock, order.items) for stock in online_stocks):
+            continue  # masih ada yang sanggup — biarkan
+        order.status = OrderStatus.FAILED
+        order.error = "no_bot_has_stock (kedaluwarsa)"
+        orders.save(order)
+        swept += 1
+    return swept
+
+
 @app.get("/health")
 def health(): return {"status": "ok", "service": settings.app_name}
+
+
+@app.post("/api/v1/orders/sweep", dependencies=[Depends(require_admin)])
+def sweep_now(db: Session = Depends(get_db)):
+    """Jalankan sweeper manual — berguna untuk membersihkan order nyangkut."""
+    return {"swept": sweep_stale_orders(db)}
 
 @app.post("/api/v1/bots", response_model=RegisterBotResponse, status_code=201, dependencies=[Depends(require_registration_key)])
 def register_bot(payload: RegisterBotRequest, db: Session = Depends(get_db)):

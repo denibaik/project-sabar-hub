@@ -1,8 +1,17 @@
+from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from app.core.config import settings
 
 connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
+
+# SQLite menyimpan file di path relatif; foldernya harus ada sebelum engine dipakai.
+# Tanpa ini, deploy bersih gagal dengan "unable to open database file".
+if settings.database_url.startswith("sqlite:///"):
+    _db_path = Path(settings.database_url.removeprefix("sqlite:///"))
+    if _db_path.parent and str(_db_path.parent) not in (".", ""):
+        _db_path.parent.mkdir(parents=True, exist_ok=True)
+
 engine = create_engine(settings.database_url, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 

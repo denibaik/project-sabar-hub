@@ -75,6 +75,8 @@ Run berikutnya di akun yang sama tak perlu `BOT_TOKEN` lagi (tersimpan otomatis)
 - **Dashboard** — Bots, Orders (form dropdown ber-stok), Inventory, Products, Dashboard.
   Semua data nyata, polling 3–5 detik.
 - **Auth bot cepat** — lookup token via prefix ber-index: 0,08 dtk pada 32 bot (dari 0,48 dtk pada 10 bot), latensi datar.
+- **Backorder sweeper** — order pending tak terpenuhi otomatis `failed` + endpoint sweep manual.
+- **Rate limiting** — per IP, tiga kelompok batas (publik/bot/admin), bisa diatur via env.
 - **Keamanan** — login dashboard (cookie httpOnly HMAC), semua endpoint kelola butuh
   `X-Admin-Key`, kunci hanya server-side (0 kebocoran ke browser), CORS dari env,
   kunci acak kuat, pencabutan token bot.
@@ -85,9 +87,8 @@ Run berikutnya di akun yang sama tak perlu `BOT_TOKEN` lagi (tersimpan otomatis)
 
 - **Integrasi API marketplace asli** — butuh kredensial Itemku/G2G/dll.
 - **Web store publik** — halaman pembeli belum dibuat.
-- **Backorder sweeper** — order tanpa bot ber-stok menggantung `pending` selamanya.
 
-- **PostgreSQL**, **Alembic**, **rate limiting**. (Claim sudah aman balapan; TLS/systemd ada panduannya.)
+- **PostgreSQL** & **Alembic**. (Claim aman balapan, sweeper, rate limit sudah ada; TLS/systemd ada panduannya.)
 - Halaman `/` (index lama) & AI Control Center masih mock.
 
 Detail lengkap + prioritas: lihat **PRE_DEPLOY_AUDIT.md**.
@@ -115,7 +116,6 @@ Panduan deploy VPS: lihat **DEPLOY_DIGITALOCEAN.md**.
 |---|---|
 | Web store publik | *"Buat halaman web store publik untuk pembeli"* |
 | Form koneksi channel lain | *"Sambungkan form /marketplace/[slug] ke CRUD channels"* |
-| Backorder sweeper | *"Tambah backorder sweeper: order pending tanpa bot ber-stok → failed setelah timeout"* |
 | Perbaiki auth O(n) | *"Percepat resolve_bot: lookup token pakai prefix ber-index, argon2 sekali saja"* |
 | PostgreSQL + Alembic | *"Pindahkan backend ke PostgreSQL dan pasang Alembic"* |
 

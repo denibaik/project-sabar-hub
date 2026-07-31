@@ -139,3 +139,52 @@ def test_concurrent_claims_never_double_assign():
     for t in threads: t.join()
 
     assert len(winners) == 1, f"order diklaim {len(winners)} bot — harusnya tepat 1"
+
+
+def test_sweeper_fails_only_unfulfillable_stale_orders():
+    """Sweeper menandai failed order lama yang tak ada bot ber-stok — dan HANYA itu.
+
+    Order yang masih bisa dipenuhi bot online harus dibiarkan, berapa pun umurnya.
+    """
+    from datetime import datetime, timedelta, timezone
+    from app.infrastructure.database.session import SessionLocal
+    from app.infrastructure.database.models.order import OrderModel
+    from app.main import sweep_stale_orders
+    from app.core.config import settings
+
+    _register(inventory={"Seeds": {"SweepHave": 10}})  # bot online punya SweepHave
+
+    # (a) lama + TAK ADA yang punya stoknya → harus di-sweep
+    a = client.post("/api/v1/orders", headers=ADMIN, json={
+        "recipient": "sweepA",
+        "items": [{"category": "Seeds", "item_key": "SweepMissing", "count": 1}],
+    }).json()["id"]
+
+    # (b) lama TAPI bot punya stoknya → harus dibiarkan
+    b = client.post("/api/v1/orders", headers=ADMIN, json={
+        "recipient": "sweepB",
+        "items": [{"category": "Seeds", "item_key": "SweepHave", "count": 1}],
+    }).json()["id"]
+
+    # (c) baru + tak ada stok → belum kedaluwarsa, harus dibiarkan
+    c = client.post("/api/v1/orders", headers=ADMIN, json={
+        "recipient": "sweepC",
+        "items": [{"category": "Seeds", "item_key": "SweepMissing", "count": 1}],
+    }).json()["id"]
+
+    # tuakan (a) dan (b) melewati ambang
+    old = datetime.now(timezone.utc) - timedelta(seconds=settings.order_stale_seconds + 60)
+    db = SessionLocal()
+    try:
+        for oid in (a, b):
+            db.get(OrderModel, __import__("uuid").UUID(oid)).created_at = old
+        db.commit()
+        assert sweep_stale_orders(db) == 1
+    finally:
+        db.close()
+
+    got = {o["id"]: o for o in client.get("/api/v1/orders", headers=ADMIN).json()["items"]}
+    assert got[a]["status"] == "failed", "order lama tanpa stok harus failed"
+    assert "no_bot_has_stock" in (got[a]["error"] or "")
+    assert got[b]["status"] == "pending", "order lama yang masih bisa dipenuhi jangan disentuh"
+    assert got[c]["status"] == "pending", "order baru jangan disentuh"

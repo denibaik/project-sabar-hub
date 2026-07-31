@@ -8,6 +8,14 @@ class Settings(BaseSettings):
     heartbeat_timeout_seconds: int = 60
     order_retry_delay_seconds: int = 15  # cooldown sebelum order 'released' boleh di-claim lagi
     order_max_release: int = 8           # setelah sekian release (tak ada bot ber-stok) → failed
+    # Backorder sweeper: order pending selama ini & tak ada bot online ber-stok → failed.
+    # 0 = matikan sweeper.
+    order_stale_seconds: int = 900       # 15 menit
+    sweeper_interval_seconds: int = 60
+    # Rate limit per IP per menit (0 = matikan). Hitungan per-proses uvicorn.
+    rate_limit_public: int = 120   # /health, /files/*
+    rate_limit_bot: int = 600      # heartbeat + claim + result (bot polling tiap 5 dtk)
+    rate_limit_admin: int = 600    # dashboard polling 3 endpoint tiap 3 dtk
     # daftar origin dashboard, dipisah koma. Di VPS isi dgn domain asli.
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
