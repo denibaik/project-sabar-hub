@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.domain.bots.entities import Bot, BotStatus
 from app.domain.orders.entities import Order, OrderItem, OrderStatus
-from app.infrastructure.database.session import Base, engine, ensure_columns, get_db
+from app.infrastructure.database.session import Base, engine, get_db, run_migrations
 
 from app.infrastructure.repositories.sqlalchemy_bot_repository import SqlAlchemyBotRepository
 from app.infrastructure.repositories.sqlalchemy_order_repository import (
@@ -39,8 +39,7 @@ import csv as _csv
 import io as _io
 import urllib.request as _urlreq
 
-Base.metadata.create_all(bind=engine)
-ensure_columns()  # tambah kolom baru pada DB lama (sampai Alembic dipasang)
+run_migrations()  # skema diurus Alembic; lihat migrations/
 async def _periodic(label: str, interval: int, fn):
     """Jalankan `fn(db)` tiap `interval` detik. Error dicatat, tidak mematikan app."""
     from app.infrastructure.database.session import SessionLocal

@@ -118,6 +118,10 @@ ter-track git dan editannya membuat `git pull` bentrok.
   executor & apakah token bisa disimpan.
 - **Penjaga database** — backend menyebutkan database yang dibuka saat menyala,
   dan berterus terang bila jatuh ke nilai bawaan.
+- **Alembic** — skema diurus migrasi, dijalankan otomatis saat backend menyala.
+  Database yang sudah ada sebelum Alembic dipasang **diadopsi** (stamp), bukan
+  dibangun ulang — datanya tidak disentuh. Migrasi baru:
+  `.venv/bin/python -m alembic revision --autogenerate -m "ubah apa"`.
 - **Perbandingan stok listing** — `/api/v1/u7buy/stock-plan` membandingkan angka
   stok di listing U7Buy dengan stok bot yang sesungguhnya
   (`stok bot ÷ per_unit`, dibulatkan ke bawah). Hanya membaca. Penulisannya ada
@@ -149,7 +153,6 @@ order `processing` yang bot-nya sudah lama tak mengirim heartbeat.
 - **`U7BUY_CALLBACK_ENABLED` masih `false`.** Sengaja: menyalakannya membuat
   sistem menandai order pembeli selesai di marketplace, dan itu tak bisa dibatalkan.
   Nyalakan setelah satu order uji terbukti benar ujung ke ujung.
-- **Alembic** — perubahan skema masih ditangani `ensure_columns()`.
 - **Form koneksi channel lain** — `/marketplace/[slug]` masih placeholder
   (Google Sheet dan U7Buy sudah punya halaman sendiri).
 - **Integrasi API marketplace lain** — butuh kredensial Itemku/G2G/Eldorado.
@@ -203,7 +206,6 @@ Panduan deploy VPS: lihat **DEPLOY_DIGITALOCEAN.md**.
 | Mau lanjut apa | Prompt |
 |---|---|
 | Cocokkan tanda tangan U7Buy | *"Ini log webhook U7Buy pertama, cocokkan rumus tanda tangannya"* (sertakan log) |
-| Alembic | *"Pasang Alembic untuk migrasi skema"* |
 | Tambal order nyangkut | *"Bot coba ulang laporan hasil; sweeper lepas order processing yang botnya offline"* |
 | Web store publik | *"Buat halaman web store publik untuk pembeli"* |
 | Landing page | *"Buat landing page di sabarhub.me"* |

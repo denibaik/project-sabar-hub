@@ -81,6 +81,48 @@ def ensure_columns() -> None:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
 
 
+def _alembic_config():
+    from alembic.config import Config
+
+    akar = Path(__file__).resolve().parents[3]      # raynor-hub-backend/
+    cfg = Config(str(akar / "alembic.ini"))
+    cfg.set_main_option("script_location", str(akar / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
+    cfg.attributes["configure_logger"] = False      # jangan ganggu logger uvicorn
+    return cfg
+
+
+def run_migrations() -> None:
+    """Bawa skema database ke versi terbaru.
+
+    Ada dua keadaan yang harus dibedakan:
+
+    1. Database baru (atau belum punya tabel) → jalankan seluruh migrasi.
+    2. Database yang SUDAH berisi tabel dan data tapi belum pernah dikelola
+       Alembic — yaitu produksi yang berjalan sebelum ini. Menjalankan migrasi
+       di situ akan gagal karena `CREATE TABLE` menabrak tabel yang ada. Yang
+       benar adalah menandainya (`stamp`) sebagai sudah berada di baseline,
+       tanpa mengeksekusi apa pun.
+
+    `ensure_columns()` dijalankan sekali sebelum stamp, supaya skema lama itu
+    benar-benar setara dengan baseline sebelum diadopsi. Setelah itu ia tidak
+    diperlukan lagi — Alembic yang mengurus perubahan berikutnya.
+    """
+    from alembic import command
+    from sqlalchemy import inspect
+
+    tabel = set(inspect(engine).get_table_names())
+    cfg = _alembic_config()
+
+    if tabel and "alembic_version" not in tabel:
+        ensure_columns()
+        command.stamp(cfg, "head")
+        print("[db] skema lama diadopsi Alembic (stamp ke baseline)")
+        return
+
+    command.upgrade(cfg, "head")
+
+
 def get_db():
     db = SessionLocal()
     try:

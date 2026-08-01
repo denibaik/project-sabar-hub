@@ -331,6 +331,11 @@ cd ~/project-sabar-hub && git pull
 cd raynor-hub-backend && .venv/bin/pip install ".[postgres]" && cd ..
 cd raynor-hub-frontend && npm ci && npm run build && cd ..
 sudo systemctl restart sabar-api sabar-dash
+
+# Skema database diurus Alembic dan dijalankan otomatis saat backend menyala.
+# Database yang sudah ada dari sebelum Alembic dipasang akan diadopsi apa adanya
+# (di-stamp), bukan dibangun ulang — datanya tidak disentuh. Cek di log:
+#   sudo journalctl -u sabar-api -n 20 --no-pager | grep '\[db\]'
 ```
 
 ---
@@ -346,7 +351,6 @@ Rinciannya di **PRE_DEPLOY_AUDIT.md**.
 | **Order menggantung** (#8) | Order tanpa bot ber-stok `pending` selamanya | Pantau manual di dashboard |
 | **Laporan bot dipercaya** (#4) | Token bocor → bisa lapor `fulfilled` palsu | Cabut token lewat dashboard |
 | **Belum ada rate limit** (#15) | Endpoint bisa dibanjiri | Batasi dashboard per-IP (§10) |
-| **Belum ada Alembic** (#10) | Perubahan skema manual | `ensure_columns()` menangani penambahan kolom sederhana |
 
 ---
 
