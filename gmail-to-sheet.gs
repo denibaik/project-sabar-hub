@@ -26,12 +26,14 @@
  *       Function        : prosesEmailBaru
  *       Event source    : Time-driven
  *       Type            : Minutes timer
- *       Interval        : Every 5 minutes
+ *       Interval        : Every 10 minutes
  *
  * ── CATATAN PENTING ─────────────────────────────────────────────────────
  * • HANYA email yang tiba SETELAH `mulaiDariSekarang` dijalankan yang diproses.
  *   Email lama diabaikan permanen — pengaman agar barang tidak terkirim dua kali.
- * • Email yang sudah diproses diberi label agar tidak dobel.
+ * • Email yang sudah diproses diberi label agar tidak dobel. Label dipasang
+ *   berkelompok (100 thread sekali panggil) karena layanan Gmail di Apps Script
+ *   punya kuota harian — menandai satu per satu bisa menghabiskannya.
  * • Order dengan produk yang TIDAK ada di PRODUCT_MAP tidak ditulis ke sheet;
  *   sebagai gantinya email diberi label "SabarHub/Perlu-Cek" supaya kamu tahu
  *   ada order yang terlewat. Ini disengaja — menebak item berarti berisiko
@@ -134,12 +136,14 @@ function mulaiDariSekarang() {
 
   const labelDone = ambilLabel_(LABEL_DONE);
   let ditandai = 0;
-  // beri label pada seluruh email order lama, tanpa menulis apa pun ke sheet
-  for (let mulai = 0; ; mulai += 50) {
-    const threads = GmailApp.search(GMAIL_QUERY_DASAR, mulai, 50);
+  // Beri label pada seluruh email order lama, tanpa menulis apa pun ke sheet.
+  // Dipasang 100 thread sekali panggil — kalau satu per satu, mailbox besar
+  // menghabiskan kuota Gmail harian sebelum selesai.
+  for (let mulai = 0; ; mulai += 100) {
+    const threads = GmailApp.search(GMAIL_QUERY_DASAR, mulai, 100);
     if (!threads.length) break;
-    threads.forEach(function (t) { t.addLabel(labelDone); ditandai++; });
-    if (threads.length < 50) break;
+    ditandai += pasangLabel_(labelDone, threads);
+    if (threads.length < 100) break;
   }
 
   const sekarang = Date.now();
@@ -181,36 +185,42 @@ function prosesEmailBaru() {
 
   let ditulis = 0, dilewati = 0, perluCek = 0, terlaluLama = 0;
 
+  // Label dikumpulkan dulu, dipasang sekali di akhir. Memasangnya di dalam loop
+  // berarti satu panggilan Gmail per pesan — thread dengan beberapa pesan bahkan
+  // ditandai berulang kali untuk thread yang sama.
+  const akanDone = [], akanCek = [];
+  const baris = [];
+
   threads.forEach(function (thread) {
+    let done = false, cek = false;
+
     thread.getMessages().forEach(function (msg) {
       // Lapis kedua: abaikan email yang tiba sebelum batas waktu, walau labelnya
       // terlanjur hilang atau pencarian melewatkan sesuatu.
       if (msg.getDate().getTime() <= mulaiMs) {
         terlaluLama++;
-        thread.addLabel(labelDone);
+        done = true;
         return;
       }
 
-      const teks = keTeks_(msg.getBody());
-      const order = urai_(teks);
-
+      const order = urai_(keTeks_(msg.getBody()));
       if (!order) return; // bukan email order — biarkan tanpa label
 
       if (sudahAda[order.ref]) {
         dilewati++;
-        thread.addLabel(labelDone);
+        done = true;
         return;
       }
 
       const map = cariProduk_(order.produk);
       if (!map) {
         Logger.log('Produk belum dipetakan: "' + order.produk + '" (order ' + order.ref + ")");
-        thread.addLabel(labelCheck);
+        cek = true;
         perluCek++;
         return;
       }
 
-      sheet.appendRow([
+      baris.push([
         order.username,
         map.category,
         map.item_key,
@@ -220,13 +230,45 @@ function prosesEmailBaru() {
       ]);
       sudahAda[order.ref] = true;
       ditulis++;
-      thread.addLabel(labelDone);
+      done = true;
     });
+
+    if (cek) akanCek.push(thread);
+    else if (done) akanDone.push(thread);
   });
+
+  // Tulis seluruh baris sekali jalan, bukan appendRow per order.
+  if (baris.length) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, baris.length, baris[0].length).setValues(baris);
+  }
+
+  // Label dipasang SETELAH baris tersimpan. Kalau urutannya dibalik dan penulisan
+  // gagal, emailnya sudah tertandai selesai dan ordernya hilang tanpa jejak.
+  pasangLabel_(labelDone, akanDone);
+  pasangLabel_(labelCheck, akanCek);
 
   Logger.log("Ditulis: " + ditulis + " | Sudah ada: " + dilewati +
              " | Perlu dicek: " + perluCek + " | Email lama diabaikan: " + terlaluLama);
 }
+
+/**
+ * Pasang label ke banyak thread sekaligus.
+ *
+ * `thread.addLabel()` adalah SATU panggilan layanan Gmail per thread, dan Apps
+ * Script punya kuota harian. Menandai ratusan email lama satu per satu sudah
+ * pernah menghabiskannya — "Service invoked too many times for one day: gmail" —
+ * dan skrip berhenti total sampai kuotanya pulih.
+ *
+ * `addToThreads` memasang label ke maksimal 100 thread dalam satu panggilan.
+ */
+function pasangLabel_(label, threads) {
+  if (!threads || !threads.length) return 0;
+  for (let i = 0; i < threads.length; i += 100) {
+    label.addToThreads(threads.slice(i, i + 100));
+  }
+  return threads.length;
+}
+
 
 /**
  * Bentuk baku nama produk. Aturannya sama persis dengan backend, supaya nama
