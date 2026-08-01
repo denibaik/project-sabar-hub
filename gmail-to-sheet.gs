@@ -37,7 +37,7 @@
  * • KUOTA: jalan yang tidak menemukan email baru hanya memakai 1 panggilan
  *   Gmail. Interval 1 menit ≈ 1.440 panggilan/hari — masih jauh di bawah batas.
  *   Yang boros justru fungsi yang menyapu SELURUH mailbox:
- *     - `daftarProduk`      ~1.700 panggilan sekali jalan (848 email)
+ *     - `daftarProduk`      ~200 panggilan (dibatasi 200 email terbaru)
  *     - `mulaiDariSekarang` ~26 panggilan sekali jalan
  *   Keduanya hanya perlu dijalankan sekali. Menjalankannya berulang-ulang
  *   itulah yang menghabiskan kuota, bukan trigger-nya.
@@ -333,17 +333,30 @@ function cariProduk_(nama) {
  * Tidak menulis apa pun ke sheet dan tidak memberi label, jadi aman dijalankan
  * kapan saja. Hasilnya ada di View → Logs.
  */
-function daftarProduk() {
+function daftarProduk(maksEmail) {
+  // Fungsi ini membaca ISI tiap email — satu panggilan Gmail per pesan. Tanpa
+  // batas, mailbox 848 email memakan ~1.700 panggilan SEKALI jalan, dan
+  // menjalankannya beberapa kali sambil melengkapi PRODUCT_MAP sudah pernah
+  // menghabiskan kuota harian sampai skrip mati seharian.
+  //
+  // Email terbaru dibaca lebih dulu, dan daftar produk yang berbeda biasanya
+  // sudah lengkap jauh sebelum batas ini tercapai. Naikkan hanya kalau ada
+  // produk lama yang memang tak pernah muncul lagi.
+  const batas = maksEmail || 200;
+
   const hitung = {};
-  for (let mulai = 0; ; mulai += 50) {
+  let dibaca = 0;
+  for (let mulai = 0; dibaca < batas; mulai += 50) {
     const threads = GmailApp.search(GMAIL_QUERY_DASAR, mulai, 50);
     if (!threads.length) break;
-    threads.forEach(function (t) {
-      t.getMessages().forEach(function (m) {
+    for (const t of threads) {
+      if (dibaca >= batas) break;
+      for (const m of t.getMessages()) {
+        dibaca++;
         const order = urai_(keTeks_(m.getBody()));
         if (order) hitung[order.produk] = (hitung[order.produk] || 0) + 1;
-      });
-    });
+      }
+    }
     if (threads.length < 50) break;
   }
 
@@ -354,7 +367,10 @@ function daftarProduk() {
       return hitung[p] + "x  \"" + p.toLowerCase() + "\"  — " + status;
     });
 
-  Logger.log(baris.length ? baris.join("\n") : "Tidak ada email order yang terbaca.");
+  Logger.log((baris.length ? baris.join("\n") : "Tidak ada email order yang terbaca.") +
+             "\n\n" + dibaca + " email terbaru dibaca (batas " + batas + "). " +
+             "Perlu lebih jauh? Jalankan lewat editor: daftarProduk(500) — " +
+             "tapi ingat, tiap email = 1 panggilan kuota Gmail.");
 }
 
 
