@@ -41,6 +41,8 @@
  *     - `mulaiDariSekarang` ~26 panggilan sekali jalan
  *   Keduanya hanya perlu dijalankan sekali. Menjalankannya berulang-ulang
  *   itulah yang menghabiskan kuota, bukan trigger-nya.
+ * • Kalau ada order yang tidak tertulis ke sheet, jalankan `diagnosa` — ia
+ *   menyebut di titik mana rantainya berhenti, tanpa menulis atau memberi label.
  * • Order dengan produk yang TIDAK ada di PRODUCT_MAP tidak ditulis ke sheet;
  *   sebagai gantinya email diberi label "SabarHub/Perlu-Cek" supaya kamu tahu
  *   ada order yang terlewat. Ini disengaja — menebak item berarti berisiko
@@ -430,6 +432,75 @@ function refYangSudahAda_(sheet) {
 function ambilLabel_(nama) {
   return GmailApp.getUserLabelByName(nama) || GmailApp.createLabel(nama);
 }
+
+/**
+ * Kenapa email order tidak tertulis ke sheet? Jalankan ini.
+ *
+ * Memeriksa seluruh rantai sekali jalan dan menyebut di titik mana ia berhenti:
+ * batas waktu, pencarian, penguraian, pemetaan produk, sampai cek duplikat.
+ *
+ * Tidak menulis apa pun, tidak memasang label. Murah kuota: satu pencarian dan
+ * satu pesan yang dibaca.
+ */
+function diagnosa() {
+  const catat = [];
+  const mulaiMs = Number(PropertiesService.getScriptProperties().getProperty(PROP_MULAI));
+
+  catat.push("1. Batas waktu: " + (mulaiMs
+    ? new Date(mulaiMs) + "  (email sebelum ini diabaikan)"
+    : "BELUM DISETEL → prosesEmailBaru menolak jalan. Jalankan mulaiDariSekarang."));
+  if (!mulaiMs) { Logger.log(catat.join("\n")); return; }
+
+  const query = `${GMAIL_QUERY} -label:${LABEL_DONE.replace(/\//g, "-")} -label:${LABEL_CHECK.replace(/\//g, "-")}`;
+  catat.push("2. Query: " + query);
+
+  const threads = GmailApp.search(query, 0, 10);
+  catat.push("3. Thread cocok: " + threads.length);
+  if (!threads.length) {
+    catat.push("   → Tidak ada email yang cocok. Kemungkinan: pengirimnya bukan");
+    catat.push("     vcgamers.com, emailnya lebih tua dari 7 hari, atau sudah berlabel");
+    catat.push("     SabarHub/Diproses maupun SabarHub/Perlu-Cek.");
+    Logger.log(catat.join("\n"));
+    return;
+  }
+
+  const msg = threads[0].getMessages().pop();
+  const tiba = msg.getDate();
+  catat.push("4. Email terbaru: " + tiba + " — dari " + msg.getFrom());
+  if (tiba.getTime() <= mulaiMs) {
+    catat.push("   → LEBIH TUA dari batas waktu, jadi sengaja diabaikan.");
+    Logger.log(catat.join("\n"));
+    return;
+  }
+
+  const order = urai_(keTeks_(msg.getBody()));
+  if (!order) {
+    catat.push("5. Penguraian GAGAL — bukan email order, atau formatnya berubah.");
+    catat.push("   Jalankan ujiUraiSaja untuk melihat isi emailnya.");
+    Logger.log(catat.join("\n"));
+    return;
+  }
+  catat.push("5. Terurai: username=" + order.username + " produk=\"" + order.produk +
+             "\" jumlah=" + order.jumlah + " ref=" + order.ref);
+
+  const map = cariProduk_(order.produk);
+  catat.push("6. Pemetaan produk: " + (map
+    ? map.category + "/" + map.item_key + " ×" + (map.perUnit || 1)
+    : "BELUM ADA di PRODUCT_MAP → email diberi label Perlu-Cek, tidak ditulis ke sheet"));
+  if (!map) { Logger.log(catat.join("\n")); return; }
+
+  const sudahAda = refYangSudahAda_(ambilSheet_());
+  catat.push("7. Sudah ada di sheet? " + (sudahAda[order.ref]
+    ? "YA → sengaja dilewati agar tidak dobel"
+    : "belum → seharusnya ditulis"));
+
+  catat.push("\nKesimpulan: " + (sudahAda[order.ref]
+    ? "order ini memang sudah tercatat."
+    : "seluruh rantai lolos. Kalau tetap tak tertulis, periksa Executions —"
+      + " kemungkinan trigger belum jalan atau kuota Gmail masih habis."));
+  Logger.log(catat.join("\n"));
+}
+
 
 /** Jalankan ini untuk menguji penguraian tanpa menulis apa pun ke sheet. */
 function ujiUraiSaja() {
