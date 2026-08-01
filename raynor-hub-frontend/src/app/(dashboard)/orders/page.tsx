@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Plus, RefreshCw, Send, ShoppingBag, Trash2, UserRound, X } from "lucide-react"
+import { Ban, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Plus, RefreshCw, Send, ShoppingBag, Trash2, UserRound, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -38,6 +38,7 @@ type ItemRow = { id: string; count: string }
 export default function OrdersPage() {
   const [orders, setOrders] = useState<BackendOrder[]>([])
   const [page, setPage] = useState(1)
+  const [cancelling, setCancelling] = useState<string | null>(null)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [counts, setCounts] = useState<Partial<Record<OrderStatus, number>>>({})
@@ -101,6 +102,22 @@ export default function OrdersPage() {
       load()
     } catch (e) {
       setFormErr((e as Error).message)
+    }
+  }
+
+  // Order duplikat yang terlanjur masuk harus bisa dihentikan SEBELUM bot
+  // mengambilnya — begitu terkirim, barangnya tidak bisa ditarik kembali.
+  async function batalkan(order: BackendOrder) {
+    const label = order.items.map((i) => `${i.item_key} ×${i.count}`).join(", ")
+    if (!window.confirm(`Batalkan order untuk @${order.recipient} (${label})?`)) return
+    setCancelling(order.id)
+    try {
+      await backend.cancelOrder(order.id)
+      await load()
+    } catch (e) {
+      window.alert((e as Error).message)
+    } finally {
+      setCancelling(null)
     }
   }
 
@@ -173,7 +190,17 @@ export default function OrdersPage() {
             <article key={order.id} className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-4 transition-colors hover:border-indigo-400/20 md:p-5">
               <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                 <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="font-mono text-sm font-medium text-indigo-300">{order.id.slice(0, 8)}</p><Badge variant="outline" className={statusStyle[order.status]}>{order.status}</Badge><Badge variant="outline" className={srcOf(order.source).cls}>{srcOf(order.source).label}</Badge>{order.error && <span className="text-[10px] text-rose-400/80">{order.error}</span>}</div></div>
-                <div className="flex items-center gap-2 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" />{relativeTime(order.updated_at || order.created_at)}</div>
+                <div className="flex items-center gap-3">
+                  {(order.status === "pending" || order.status === "processing") && (
+                    <Button variant="ghost" size="sm" disabled={cancelling === order.id}
+                      onClick={() => batalkan(order)}
+                      className="h-7 px-2 text-xs text-slate-500 hover:bg-rose-500/10 hover:text-rose-300">
+                      <Ban className="mr-1.5 h-3.5 w-3.5" />
+                      {cancelling === order.id ? "Membatalkan…" : "Batalkan"}
+                    </Button>
+                  )}
+                  <div className="flex items-center gap-2 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" />{relativeTime(order.updated_at || order.created_at)}</div>
+                </div>
               </div>
               <div className="mt-5 grid gap-4 border-t border-white/[0.06] pt-5 md:grid-cols-2 xl:grid-cols-[1fr_1.6fr_0.6fr_0.8fr]">
                 <Info icon={UserRound} label="Recipient" primary={`@${order.recipient}`} secondary="Roblox mailbox" />

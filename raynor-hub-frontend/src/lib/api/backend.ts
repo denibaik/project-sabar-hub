@@ -198,6 +198,12 @@ export const backend = {
     return unwrap<BackendOrder>(r)
   },
 
+  /** Batalkan order pending/processing. Statusnya jadi `failed`, tidak dihapus. */
+  async cancelOrder(id: string): Promise<BackendOrder> {
+    const r = await fetch(`${API_BASE}/api/v1/orders/${id}/cancel`, { method: "POST" })
+    return unwrap<BackendOrder>(r)
+  },
+
   // ---- Marketplace channels ----
   async listChannels(): Promise<BackendChannel[]> {
     const r = await fetch(`${API_BASE}/api/v1/channels`, { cache: "no-store" })

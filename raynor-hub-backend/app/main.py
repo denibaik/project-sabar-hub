@@ -508,6 +508,34 @@ def create_order(payload: CreateOrderRequest, db: Session = Depends(get_db)):
     return order_response(SqlAlchemyOrderRepository(db).create(order))
 
 
+@app.post("/api/v1/orders/{order_id}/cancel", response_model=OrderResponse,
+          dependencies=[Depends(require_admin)])
+def cancel_order(order_id: UUID, db: Session = Depends(get_db)):
+    """Batalkan order yang belum selesai.
+
+    Dibutuhkan untuk dua keadaan yang nyata terjadi: order duplikat yang terlanjur
+    masuk dan belum boleh terkirim, serta order yang nyangkut di `processing`
+    karena laporan bot tak sampai.
+
+    Statusnya menjadi `failed` — bukan dihapus — supaya riwayatnya tetap ada dan
+    order yang pernah masuk tidak lenyap tanpa jejak.
+    """
+    orders = SqlAlchemyOrderRepository(db)
+    order = orders.get(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    if order.status not in (OrderStatus.PENDING, OrderStatus.PROCESSING):
+        raise HTTPException(status_code=409,
+                            detail=f"Order sudah {order.status.value}, tak bisa dibatalkan")
+
+    sedang_dikerjakan = order.status == OrderStatus.PROCESSING
+    order.status = OrderStatus.FAILED
+    order.assigned_bot = None
+    order.error = ("dibatalkan manual saat sedang dikerjakan — periksa apakah barang "
+                   "terlanjur terkirim") if sedang_dikerjakan else "dibatalkan manual"
+    return order_response(orders.save(order))
+
+
 @app.get("/api/v1/orders", response_model=OrderListResponse, dependencies=[Depends(require_admin)])
 def list_orders(
     page: int = 1,
