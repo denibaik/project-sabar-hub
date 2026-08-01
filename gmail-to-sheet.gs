@@ -26,7 +26,7 @@
  *       Function        : prosesEmailBaru
  *       Event source    : Time-driven
  *       Type            : Minutes timer
- *       Interval        : Every 10 minutes
+ *       Interval        : Every 1 minute (aman — lihat catatan kuota di bawah)
  *
  * ── CATATAN PENTING ─────────────────────────────────────────────────────
  * • HANYA email yang tiba SETELAH `mulaiDariSekarang` dijalankan yang diproses.
@@ -34,6 +34,13 @@
  * • Email yang sudah diproses diberi label agar tidak dobel. Label dipasang
  *   berkelompok (100 thread sekali panggil) karena layanan Gmail di Apps Script
  *   punya kuota harian — menandai satu per satu bisa menghabiskannya.
+ * • KUOTA: jalan yang tidak menemukan email baru hanya memakai 1 panggilan
+ *   Gmail. Interval 1 menit ≈ 1.440 panggilan/hari — masih jauh di bawah batas.
+ *   Yang boros justru fungsi yang menyapu SELURUH mailbox:
+ *     - `daftarProduk`      ~1.700 panggilan sekali jalan (848 email)
+ *     - `mulaiDariSekarang` ~26 panggilan sekali jalan
+ *   Keduanya hanya perlu dijalankan sekali. Menjalankannya berulang-ulang
+ *   itulah yang menghabiskan kuota, bukan trigger-nya.
  * • Order dengan produk yang TIDAK ada di PRODUCT_MAP tidak ditulis ke sheet;
  *   sebagai gantinya email diberi label "SabarHub/Perlu-Cek" supaya kamu tahu
  *   ada order yang terlewat. Ini disengaja — menebak item berarti berisiko
@@ -174,14 +181,20 @@ function prosesEmailBaru() {
     return;
   }
 
+  // Cari DULU, baru siapkan yang lain.
+  //
+  // Pada interval rapat, hampir semua jalan tidak menemukan apa-apa. Mengambil
+  // label dan membuka sheet lebih dulu berarti tiap jalan kosong tetap memakai
+  // 3 panggilan Gmail — dan layanan Gmail di Apps Script punya kuota harian.
+  // Dengan urutan ini, jalan kosong hanya memakai 1 panggilan.
+  const query = `${GMAIL_QUERY} -label:${LABEL_DONE.replace(/\//g, "-")} -label:${LABEL_CHECK.replace(/\//g, "-")}`;
+  const threads = GmailApp.search(query, 0, 50);
+  if (!threads.length) return;   // tak ada email baru — berhenti tanpa menyentuh apa pun
+
   const sheet = ambilSheet_();
   const sudahAda = refYangSudahAda_(sheet);
   const labelDone = ambilLabel_(LABEL_DONE);
   const labelCheck = ambilLabel_(LABEL_CHECK);
-
-  // Kecualikan yang sudah berlabel agar tidak diproses ulang
-  const query = `${GMAIL_QUERY} -label:${LABEL_DONE.replace(/\//g, "-")} -label:${LABEL_CHECK.replace(/\//g, "-")}`;
-  const threads = GmailApp.search(query, 0, 50);
 
   let ditulis = 0, dilewati = 0, perluCek = 0, terlaluLama = 0;
 
