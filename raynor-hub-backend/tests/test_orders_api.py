@@ -183,7 +183,11 @@ def test_sweeper_fails_only_unfulfillable_stale_orders():
     finally:
         db.close()
 
-    got = {o["id"]: o for o in client.get("/api/v1/orders", headers=ADMIN).json()["items"]}
+    # page_size eksplisit: daftar order dipaginasi, dan modul test lain
+    # menambah order sehingga yang diperiksa di sini bisa terdorong ke halaman
+    # berikutnya — kegagalan yang tak ada hubungannya dengan sweeper.
+    got = {o["id"]: o
+           for o in client.get("/api/v1/orders?page_size=100", headers=ADMIN).json()["items"]}
     assert got[a]["status"] == "failed", "order lama tanpa stok harus failed"
     assert "no_bot_has_stock" in (got[a]["error"] or "")
     assert got[b]["status"] == "pending", "order lama yang masih bisa dipenuhi jangan disentuh"
