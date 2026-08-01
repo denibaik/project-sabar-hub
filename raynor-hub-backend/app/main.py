@@ -713,13 +713,18 @@ def sync_google_sheet(db: Session, ch: Channel) -> dict:
             skipped += 1
             continue
 
-        if ref in imported_refs:
+        note = f"gsheet:{ref}"
+        # Dua lapis. Daftar di config murah tapi terpisah per channel dan bisa
+        # basi saat dua sync berjalan bersamaan; tabel order adalah kebenaran
+        # yang sama untuk semua channel dan semua proses.
+        if ref in imported_refs or orders.exists_with_note(note):
             skipped += 1
+            imported_refs.add(ref)
             continue
 
         try:
             order = Order(uuid4(), recipient.strip(), [OrderItem(category, item_key, count)],
-                          note=f"gsheet:{ref}", source=row_source)
+                          note=note, source=row_source)
             orders.create(order)
             imported += 1
             new_refs.append(ref)
@@ -832,10 +837,15 @@ def process_u7buy_events(db: Session) -> int:
         # menerima satu dari sekian yang dibayarnya.
         jumlah = max(1, int(detail.get("quantity") or 1)) * max(1, int(entri.get("per_unit") or 1))
 
+        note = f"u7buy:{order_id}"
+        if orders.exists_with_note(note):
+            repo.mark(row, "ignored", "order untuk transaksi ini sudah pernah dibuat")
+            continue
+
         order = Order(
             uuid4(), username,
             [OrderItem(str(entri["category"]), str(entri["item_key"]), jumlah)],
-            note=f"u7buy:{order_id}", source="u7buy",
+            note=note, source="u7buy",
         )
         orders.create(order)
         dibuat += 1

@@ -23,6 +23,21 @@ class SqlAlchemyOrderRepository:
             row.next_retry_at, row.created_at, row.updated_at,
         )
 
+    def exists_with_note(self, note: str) -> bool:
+        """Apakah sudah ada order dengan penanda ini?
+
+        Penanda order dari marketplace disimpan di `note` (`gsheet:REF`,
+        `u7buy:ID`). Bertanya ke tabel order jauh lebih dapat dipercaya daripada
+        daftar yang disimpan di config channel: daftar itu terpisah per channel
+        dan bisa terbaca basi saat dua sync berjalan bersamaan — keduanya membuat
+        order dari baris yang sama, dan pembeli menerima barangnya dua kali.
+        """
+        if not note:
+            return False
+        return self.db.scalar(
+            select(OrderModel.id).where(OrderModel.note == note).limit(1)
+        ) is not None
+
     def create(self, order: Order) -> Order:
         row = OrderModel(
             id=order.id, recipient=order.recipient,

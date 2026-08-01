@@ -131,3 +131,41 @@ def test_source_column_labels_the_real_origin():
         assert by_recipient["buyerPlain"]["source"] == "google_sheet", "kosong → default sheet"
     finally:
         srv.shutdown()
+
+
+def test_dua_channel_url_sama_tidak_menggandakan_order():
+    """Tiap channel punya daftar `imported_refs` sendiri.
+
+    Kalau dedup hanya bersandar pada daftar itu, dua channel dengan URL yang sama
+    membuat SETIAP baris jadi dua order — pembeli menerima barangnya dua kali.
+    """
+    srv, url = _serve()
+    try:
+        CSV_CONTENT["data"] = (
+            "recipient,category,item_key,count,order_ref\n"
+            "atar_nen,Seeds,Ghost Pepper,1,TRX-DUA-1\n"
+            "rafapalembang1,Pets,Unicorn,1,TRX-DUA-2\n"
+        )
+        pertama = _sync(_channel(url))
+        kedua = _sync(_channel(url))          # channel kedua, sumber yang sama
+
+        assert pertama["imported"] == 2
+        assert kedua["imported"] == 0
+        assert kedua["skipped"] == 2
+    finally:
+        srv.shutdown()
+
+
+def test_sync_berulang_pada_channel_baru_tetap_tak_dobel():
+    """Menyambung ulang channel mengosongkan daftarnya — tabel order tidak."""
+    srv, url = _serve()
+    try:
+        CSV_CONTENT["data"] = (
+            "recipient,category,item_key,count,order_ref\n"
+            "atar_nen,Seeds,Ghost Pepper,1,TRX-BARU-1\n"
+        )
+        assert _sync(_channel(url))["imported"] == 1
+        for _ in range(3):
+            assert _sync(_channel(url))["imported"] == 0
+    finally:
+        srv.shutdown()

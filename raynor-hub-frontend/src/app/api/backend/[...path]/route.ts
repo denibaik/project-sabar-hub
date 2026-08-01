@@ -32,6 +32,16 @@ async function proxy(req: NextRequest, path: string[]): Promise<NextResponse> {
   }
   try {
     const r = await fetch(url, init)
+
+    // 204/205/304 dilarang punya body oleh standar HTTP, dan konstruktor
+    // Response melempar galat kalau tetap diberi body — walau string kosong.
+    // Galat itu dulu tertangkap catch di bawah dan dilaporkan sebagai
+    // "backend unreachable", padahal backend sudah menjawab dengan benar:
+    // menghapus bot berhasil, tapi dashboard menampilkan 502.
+    if (r.status === 204 || r.status === 205 || r.status === 304) {
+      return new NextResponse(null, { status: r.status })
+    }
+
     const body = await r.text()
     return new NextResponse(body, {
       status: r.status,
