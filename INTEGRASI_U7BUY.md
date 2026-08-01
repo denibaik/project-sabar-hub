@@ -4,20 +4,47 @@ Catatan riset + status pengerjaan integrasi marketplace U7Buy.
 
 ---
 
-## Kenapa U7Buy (dan bukan Eldorado)
+## Kenapa U7Buy lebih dulu
 
 | | U7Buy | Eldorado.gg |
 |---|---|---|
-| API resmi publik | ✅ terdokumentasi | ❌ tidak ditemukan |
-| Webhook | ✅ ada | — |
-| Sandbox | disebutkan di situs | — |
+| API seller | ✅ terdokumentasi publik | ✅ ada, dokumentasi **lewat email** |
+| Webhook | ✅ | belum diketahui |
+| Syarat pakai | kredensial dari portal | **50 penjualan** di Eldorado |
+| Ubah stok listing | ⚠️ body PUT tak terdokumentasi | ✅ disebut eksplisit |
 
-Eldorado.gg tidak menerbitkan dokumentasi API seller publik. Yang beredar hanya
-scraper pihak ketiga, bukan resmi. Kalau tetap ingin Eldorado, jalurnya adalah
-menanyakan langsung ke support mereka soal program partner/seller API.
+**Koreksi (31 Juli 2026):** catatan lama di sini menyatakan Eldorado tidak punya
+API seller publik. Itu benar saat diriset, tapi sudah tidak berlaku — Eldorado
+menerbitkan halaman "Using the Eldorado Seller API" yang diperbarui pekan ini.
 
 ⚠️ **Jangan tertukar:** `api.eldorado.io` adalah perusahaan **fintech/kripto**,
 sama sekali bukan eldorado.gg si marketplace game.
+
+### Eldorado Seller API — yang sudah diketahui
+
+**Syarat:** 50 penjualan di Eldorado. Metode login apa pun (Google/Apple/
+Facebook/email) tidak berpengaruh.
+
+**Cakupannya:**
+
+| Bagian | Kemampuan |
+|---|---|
+| Offer | buat, ubah, jeda, lanjutkan, hapus — currency, top-up, item, akun, boosting |
+| Offer | **ubah harga, jumlah, dan waktu pengiriman** — per offer atau satu game sekaligus |
+| Offer | unggah massal lewat CSV |
+| Order | lihat order, tandai terkirim, batalkan, perbaiki detail pengiriman, buat invoice |
+
+**Yang belum tercakup:** saldo & penarikan, pesan/sengketa/ulasan, pengaturan
+akun, gambar offer, laporan penjualan.
+
+**Penghalang:** dokumentasi lengkap dan instruksi kunci **tidak publik** — harus
+diminta lewat `api@eldorado.gg`. Jadi integrasi belum bisa dimulai sampai kunci
+dan dokumennya ada.
+
+**Catatan menarik untuk kita:** "ubah jumlah" disebut eksplisit sebagai
+kemampuan resmi. Di U7Buy hal yang sama harus ditebak (salin balik objek offer),
+karena body PUT-nya tak terdokumentasi. Kalau Eldorado tersambung, sinkron stok
+di sana justru lebih aman daripada di U7Buy.
 
 ---
 
