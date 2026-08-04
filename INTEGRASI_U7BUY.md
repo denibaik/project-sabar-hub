@@ -43,8 +43,90 @@ dan dokumennya ada.
 
 **Catatan menarik untuk kita:** "ubah jumlah" disebut eksplisit sebagai
 kemampuan resmi. Di U7Buy hal yang sama harus ditebak (salin balik objek offer),
-karena body PUT-nya tak terdokumentasi. Kalau Eldorado tersambung, sinkron stok
-di sana justru lebih aman daripada di U7Buy.
+karena body PUT-nya tak terdokumentasi.
+
+### ❌ Kesimpulan: pengiriman otomatis TIDAK MUNGKIN (1 Agustus 2026)
+
+Akses API sudah didapat dan seluruh alurnya ditelusuri. **Username Roblox
+pembeli tidak ada di data order**, jadi bot tidak akan pernah tahu harus
+mengirim ke siapa.
+
+Bukti — `GET /api/v1/orders/me/seller/orders`, 50 order:
+
+| | |
+|---|---|
+| Order Grow a Garden 2 (gameId `430`) | 28 |
+| `userRequestDetails` terisi | **0 dari 50** |
+| `deliveryMethod` terisi | **0 dari 50** |
+| Kata "roblox" di seluruh 246 KB balasan | **0** |
+| Struktur order GaG2 vs game lain | sama persis |
+
+Sebabnya ada di deskripsi offer sendiri:
+
+> *"Include your username when ordering for faster processing"*
+
+Pembeli **diminta mengetiknya**, tapi tidak ada kolom terstruktur. Mereka
+menuliskannya di chat — itulah `talkJsConversationId` pada tiap order. Chat
+tidak ada di daftar endpoint Swagger.
+
+Perbandingan ketiga marketplace:
+
+| | Username pembeli |
+|---|---|
+| VCGamers | di email — bisa diurai |
+| U7Buy | di `deliveryParams` — endpoint resmi |
+| **Eldorado** | **hanya di chat — tak terjangkau API** |
+
+**Jangan bangun jalur order otomatis untuk Eldorado.** Yang masih mungkin dan
+tidak butuh username pembeli:
+
+- **Sinkron stok** lewat `item-management` (lihat endpoint di bawah)
+- **Tandai terkirim** lewat `PUT /api/v1/orders/me/{orderId}/deliver`
+- Menarik daftar order ke dashboard sekadar agar terlihat berdampingan
+
+**Satu kemungkinan yang belum tertutup:** ada
+`POST /api/v1/input-validations/auto-delivery/is-eligible`. Eldorado punya
+konsep *auto-delivery*, mungkin hanya untuk jenis offer tertentu — listing kita
+berkategori `CustomItem`. Pertanyaan untuk tim mereka: *"can Item offers be
+configured for auto-delivery so the buyer's game username is captured as a
+structured field?"* Kalau bisa, kesimpulan di atas berubah total.
+
+### Autentikasi Eldorado — dua jalur, keduanya terdokumentasi
+
+```
+A. Client credentials  (disarankan — bisa dicabut, ada kedaluwarsa)
+   POST /api/client-credentials        butuh sesi browser login
+   → clientId + clientSecret           secret HANYA muncul sekali
+   POST /api/authentication/seller/token   publik, tanpa header auth
+   → AccessToken (Bearer), ExpiresIn 900 dtk  ← wajib diperbarui tiap 15 menit
+
+B. Cognito  (butuh email + password akun disimpan di server)
+   _pool_id           = us-east-2_M1nzCFgHk
+   _client_id         = 1956req5no9drdtbF5i6kis41a
+   _cognito_hostname  = https://login.eldorado.gg
+   → idToken, dikirim sebagai Cookie: __Host-EldoradoIdToken=<idToken>
+   Contoh Python (boto3 + pycognito) ada di halaman seller-api.
+```
+
+`www.eldorado.gg/seller-api` juga memuat tautan **Swagger UI** dengan daftar
+endpoint lengkap.
+
+### Endpoint Eldorado yang relevan
+
+| | |
+|---|---|
+| `GET /api/v1/orders/me/seller/orders` | daftar order (wajib: `displayFilter`, header `swagger`) |
+| `PUT /api/v1/orders/me/{orderId}/deliver` | tandai terkirim |
+| `POST /api/v1/orders/me/{orderId}/cancel` | batalkan |
+| `GET /api/v1/item-management/me/offers/me/search` | daftar listing item |
+| `PUT /api/v1/item-management/me/offers/item/{offerId}/details` | ubah detail listing |
+| `PUT /api/v1/item-management/me/roblox-accounts/{accountId}/offers/pause` | jeda listing per akun Roblox |
+
+⚠️ **Webhook tidak ada** — halaman seller-api menyatakan
+*"At the moment, no webhook registration is available."* Jadi harus polling.
+
+⚠️ Di Swagger, tombol **Execute** mengirim permintaan SUNGGUHAN. `PUT .../deliver`
+benar-benar menandai order pembeli. Saat menjelajah, batasi diri pada `GET`.
 
 ---
 

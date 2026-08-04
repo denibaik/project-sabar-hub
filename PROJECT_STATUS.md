@@ -155,7 +155,12 @@ order `processing` yang bot-nya sudah lama tak mengirim heartbeat.
   Nyalakan setelah satu order uji terbukti benar ujung ke ujung.
 - **Form koneksi channel lain** — `/marketplace/[slug]` masih placeholder
   (Google Sheet dan U7Buy sudah punya halaman sendiri).
-- **Integrasi API marketplace lain** — butuh kredensial Itemku/G2G/Eldorado.
+- **Integrasi API marketplace lain** — butuh kredensial Itemku/G2G.
+- **Eldorado: pengiriman otomatis TIDAK MUNGKIN.** Akses API sudah didapat dan
+  ditelusuri tuntas — username Roblox pembeli tidak ada di data order sama
+  sekali (0 dari 50 order, termasuk 28 order Grow a Garden 2). Pembeli
+  menuliskannya lewat chat, dan chat tak terjangkau API. Yang masih mungkin:
+  sinkron stok dan tandai-terkirim. Rinciannya di INTEGRASI_U7BUY.md.
 - **Web store publik** & landing page di `sabarhub.me`.
 - Halaman AI Control Center masih mock.
 
